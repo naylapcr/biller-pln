@@ -21,7 +21,7 @@ export default function AuthLayout({ title, children }: { title: string; childre
                         aria-label="Tentang aplikasi"
                         className="flex flex-col justify-between gap-10 bg-pln-blue p-7 text-white sm:p-10 lg:min-h-[600px] lg:p-12"
                     >
-                        <p className="text-sm font-medium text-white/85">Sistem Kinerja Biller</p>
+                        <p className="text-sm font-medium text-white/85">SIPERMON · Kinerja Biller</p>
 
                         <div>
                             <div className="mb-8 lg:mb-10">
@@ -41,13 +41,13 @@ export default function AuthLayout({ title, children }: { title: string; childre
                                 />
                             </div>
                             <h1 className="max-w-[420px] text-[24px] leading-tight font-semibold sm:text-[30px]">
-                                Setiap angka meter tercatat benar, setiap biller dinilai adil.
+                                Rekap ACMT dan AP2T menjadi skor yang bisa dipertanggungjawabkan.
                             </h1>
                             <span aria-hidden className="mt-6 block h-1.5 w-[72px] rounded-full bg-pln-yellow" />
                         </div>
 
                         <p className="hidden text-[13px] leading-relaxed text-white/75 sm:block">
-                            Pencatatan meter, verifikasi, dan skor kinerja biller dalam satu tempat.
+                            Unggah ekspor ACMT, periksa hasil validasi, lalu lihat skor dan peringkat 25 biller ULP Kota Barat.
                         </p>
                     </section>
 

@@ -1,35 +1,22 @@
-export type Role = 'biller' | 'koordinator_admin' | 'super_admin';
-
-export interface Unit {
-    id: number;
-    kode: string;
-    nama: string;
-}
+export type Role = 'biller' | 'admin' | 'super_admin';
 
 export interface AuthUser {
     id: number;
-    nip: string;
-    name: string;
-    email: string | null;
-    phone: string | null;
+    username_nip: string;
+    nama: string;
     role: Role;
     role_label: string;
-    foto_url: string | null;
-    unit: Unit | null;
+    biller: { id: number; login_acmt: string; kode_petugas: string } | null;
 }
 
-/** Jumlah antrean per menu, kunci = id item navigasi. */
+/** Angka kecil per menu, kunci = id item navigasi. */
 export type NavBadges = Partial<Record<string, number>>;
 
 export interface SharedProps {
     appName: string;
     auth: { user: AuthUser | null };
     navBadges: NavBadges | null;
-    flash: { success: string | null; error: string | null; impor: ImporHasil | null };
-    notifikasi: {
-        belum_dibaca: number;
-        daftar: { id: string; jenis: string | null; judul: string; pesan: string; waktu: string; dibaca: boolean }[];
-    } | null;
+    flash: { success: string | null; error: string | null };
     errors: Record<string, string>;
     [key: string]: unknown;
 }
@@ -56,36 +43,96 @@ export interface Option<V extends string | number = string> {
     label: string;
 }
 
-export interface UnitOption {
-    id: number;
-    kode: string;
-    nama: string;
-    jenis: 'up3' | 'ulp';
-}
-
-export interface RuteOption {
-    id: number;
-    kode: string;
-    nama: string;
-    kelurahan: string;
-    unit_id: number;
-}
-
-export interface BillerOption {
-    id: number;
-    name: string;
-    nip: string;
-    unit_id: number | null;
-}
-
-export interface ImporHasil {
-    total: number;
-    dibuat: number;
-    diperbarui: number;
-    errors: string[];
-}
-
 export interface BreadcrumbItem {
     label: string;
     href?: string;
+}
+
+/** Periode yang sedang ditampilkan (BLTH). */
+export interface PeriodeInfo {
+    kode: string;
+    nama: string;
+    status: 'terbuka' | 'ditutup';
+    terbuka: boolean;
+}
+
+export interface PoinModul {
+    stan_valid: number;
+    eviden: number;
+    poin: number;
+    terbaca?: number;
+    jml_plg?: number;
+    kasus_bu?: number;
+    pemeriksaan?: number;
+}
+
+/** Bentuk respons skor satu biller (/billers/{id}/score dan /me/score). */
+export interface SkorBiller {
+    periode: string;
+    biller: { id: number; nama: string; login_acmt: string; kode_petugas: string };
+    poin_per_modul: Partial<Record<'pascabayar' | 'prabayar' | 'invoice' | 'pdil', PoinModul>>;
+    bonus_hari_j: number;
+    denda: {
+        baca_ulang: { kasus: number; poin: number };
+        ap2t: { kasus: number; poin: number };
+        absensi: { alpa: number; poin: number };
+    };
+    absensi: RekapAbsensi | null;
+    poin_tugas: number | null;
+    final_score: number | null;
+    peringkat: number | null;
+    jumlah_biller: number;
+    kategori: 'stabil' | 'perlu_evaluasi' | null;
+    is_final: boolean;
+    dihitung_at: string | null;
+    indikator: {
+        terbaca_hari_j: number;
+        kasus_bu: number;
+        kasus_ap2t: number;
+        rasio_kelalaian: number | null;
+        rasio_kecepatan: number | null;
+    } | null;
+    eviden: Record<string, { target: number; realisasi: number; eviden: number; persen: number | null }>;
+    aturan: { w_stan: number; w_eviden: number; mode_agregasi: string; denda_bu_per_kasus: number } | null;
+}
+
+export interface RekapAbsensi {
+    hadir: number;
+    izin: number;
+    sakit: number;
+    alpa: number;
+    alpa_tanpa_absen: number;
+    hari_kerja: number;
+}
+
+export type StatusAbsensi = 'hadir' | 'izin' | 'sakit' | 'alpa';
+
+export interface KasusDenda {
+    id: number;
+    sumber: 'BU' | 'AP2T';
+    sumber_label: string;
+    idpel: string;
+    stan_awal: number | null;
+    stan_benar: number | null;
+    tingkat: string | null;
+    denda_poin: number;
+    catatan: string | null;
+    kode_rbm: string | null;
+    daya_va: number | null;
+    tgl_baca: string | null;
+    tgl_baca_bu: string | null;
+    batas_kwh: number | null;
+}
+
+export interface BarisLeaderboard {
+    biller_id: number;
+    nama: string;
+    kode_petugas: string;
+    peringkat: number;
+    final_score: number;
+    login_acmt?: string;
+    poin_tugas?: number;
+    poin_hari_j?: number;
+    total_denda?: number;
+    kategori?: string;
 }

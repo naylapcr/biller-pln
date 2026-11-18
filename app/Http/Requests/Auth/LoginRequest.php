@@ -31,13 +31,13 @@ class LoginRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'login' => 'NIP atau email',
+            'login' => 'username atau NIP',
             'password' => 'kata sandi',
         ];
     }
 
     /**
-     * Login memakai NIP (angka) atau email. Akun nonaktif ditolak.
+     * Login memakai username_nip. Akun nonaktif ditolak. Dibatasi 5 percobaan per menit per username dan IP.
      *
      * @throws ValidationException
      */
@@ -45,11 +45,8 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        $login = trim((string) $this->input('login'));
-        $kolom = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'nip';
-
         $kredensial = [
-            $kolom => $kolom === 'email' ? Str::lower($login) : $login,
+            'username_nip' => trim((string) $this->input('login')),
             'password' => (string) $this->input('password'),
         ];
 
@@ -57,7 +54,7 @@ class LoginRequest extends FormRequest
             RateLimiter::hit($this->throttleKey(), 60);
 
             throw ValidationException::withMessages([
-                'login' => 'NIP/email atau kata sandi tidak sesuai.',
+                'login' => 'Username/NIP atau kata sandi tidak sesuai.',
             ]);
         }
 
@@ -65,7 +62,7 @@ class LoginRequest extends FormRequest
 
         if (! $user->is_active) {
             throw ValidationException::withMessages([
-                'login' => 'Akun Anda dinonaktifkan. Hubungi admin unit.',
+                'login' => 'Akun Anda dinonaktifkan. Hubungi Super Admin.',
             ]);
         }
 

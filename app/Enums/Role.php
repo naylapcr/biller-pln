@@ -8,16 +8,16 @@ enum Role: string
 {
     use HasOptions;
 
-    case Biller = 'biller';
-    case KoordinatorAdmin = 'koordinator_admin';
     case SuperAdmin = 'super_admin';
+    case Admin = 'admin';
+    case Biller = 'biller';
 
     public function label(): string
     {
         return match ($this) {
+            self::SuperAdmin => 'Super Admin',
+            self::Admin => 'Koordinator Admin',
             self::Biller => 'Biller',
-            self::KoordinatorAdmin => 'Koordinator admin',
-            self::SuperAdmin => 'Super admin',
         };
     }
 
@@ -25,7 +25,7 @@ enum Role: string
     public function homeRoute(): string
     {
         return match ($this) {
-            self::Biller => 'tugas.index',
+            self::Biller => 'saya.skor',
             default => 'dashboard',
         };
     }

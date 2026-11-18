@@ -38,6 +38,15 @@ return [
             'report' => false,
         ],
 
+        // Berkas asli unggahan ACMT/AP2T (privat, tidak bisa diakses lewat URL).
+        'unggahan' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/unggahan'),
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

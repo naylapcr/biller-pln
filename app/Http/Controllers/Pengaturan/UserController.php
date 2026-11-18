@@ -4,99 +4,125 @@ namespace App\Http\Controllers\Pengaturan;
 
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Pengaturan\UserRequest;
+use App\Models\Biller;
 use App\Models\User;
-use App\Support\Opsi;
+use App\Services\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/** CRUD akun (Super Admin). Akun Biller wajib ditautkan ke satu baris master biller. */
 class UserController extends Controller
 {
     public function index(Request $request): Response
     {
-        $this->authorize('viewAny', User::class);
-
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
             'role' => ['nullable', Rule::enum(Role::class)],
-            'unit_id' => ['nullable', 'integer'],
-            'status' => ['nullable', 'in:aktif,nonaktif'],
         ]);
 
         $users = User::query()
-            ->with('unit:id,kode,nama')
-            ->withCount('rute')
-            ->when($filters['q'] ?? null, fn ($q, $term) => $q->where(fn ($w) => $w
-                ->where('name', 'like', "%{$term}%")
-                ->orWhere('nip', 'like', "{$term}%")
-                ->orWhere('email', 'like', "%{$term}%")))
-            ->when($filters['role'] ?? null, fn ($q, $role) => $q->where('role', $role))
-            ->when($filters['unit_id'] ?? null, fn ($q, $unit) => $q->where('unit_id', $unit))
-            ->when(($filters['status'] ?? null) === 'aktif', fn ($q) => $q->where('is_active', true))
-            ->when(($filters['status'] ?? null) === 'nonaktif', fn ($q) => $q->where('is_active', false))
-            ->orderByRaw("FIELD(role, 'super_admin', 'koordinator_admin', 'biller')")
-            ->orderBy('name')
+            ->with('biller:id,nama,login_acmt,kode_petugas_acmt')
+            ->when($filters['q'] ?? null, fn ($q, $t) => $q->where(fn ($w) => $w->where('nama', 'like', "%{$t}%")->orWhere('username_nip', 'like', "%{$t}%")))
+            ->when($filters['role'] ?? null, fn ($q, $r) => $q->where('role', $r))
+            ->orderByRaw("CASE role WHEN 'super_admin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END")
+            ->orderBy('nama')
             ->paginate(25)
             ->withQueryString()
             ->through(fn (User $u) => [
                 'id' => $u->id,
-                'nip' => $u->nip,
-                'name' => $u->name,
-                'email' => $u->email,
-                'phone' => $u->phone,
+                'username_nip' => $u->username_nip,
+                'nama' => $u->nama,
                 'role' => $u->role->value,
                 'role_label' => $u->role->label(),
-                'unit_id' => $u->unit_id,
-                'unit' => $u->unit?->nama,
+                'biller_id' => $u->biller_id,
+                'biller' => $u->biller ? "{$u->biller->nama} · {$u->biller->login_acmt}" : null,
                 'is_active' => $u->is_active,
-                'foto_url' => $u->fotoProfilUrl(),
                 'last_login_at' => $u->last_login_at?->toIso8601String(),
-                'rute_count' => $u->rute_count,
             ]);
+
+        $terpakai = User::query()->whereNotNull('biller_id')->pluck('biller_id');
 
         return Inertia::render('Pengaturan/Users/Index', [
             'users' => $users,
             'filters' => (object) $filters,
-            'options' => [
-                'roles' => Role::options(),
-                'units' => Opsi::unit(),
-            ],
+            'roleOptions' => Role::options(),
+            'billerOptions' => Biller::query()->orderBy('nama')->get()->map(fn (Biller $b) => [
+                'value' => $b->id,
+                'label' => "{$b->nama} · {$b->login_acmt} ({$b->kode_petugas_acmt})",
+                'terpakai' => $terpakai->contains($b->id),
+            ]),
         ]);
     }
 
-    public function store(UserRequest $request): RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
-        $user = User::create($request->validated());
+        $data = $this->validasi($request);
+        $user = User::create($data);
+        Audit::catat('buat_akun', $user, null, $this->jejak($user));
 
-        return back()->with('success', "Pengguna {$user->name} ditambahkan.");
+        return back()->with('success', "Akun {$user->nama} dibuat.");
     }
 
-    public function update(UserRequest $request, User $user): RedirectResponse
+    public function update(Request $request, User $user): RedirectResponse
     {
-        $data = $request->validated();
-        if (empty($data['password'])) {
+        $data = $this->validasi($request, $user);
+        if (blank($data['password'] ?? null)) {
             unset($data['password']);
         }
-
-        $user->update($data);
-
-        return back()->with('success', "Data {$user->name} diperbarui.");
-    }
-
-    public function destroy(User $user): RedirectResponse
-    {
-        $this->authorize('delete', $user);
-
-        $rute = $user->rute()->pluck('kode');
-        if ($rute->isNotEmpty()) {
-            return back()->with('error', "{$user->name} masih memegang rute {$rute->join(', ')}. Ganti biller rute tersebut lebih dulu.");
+        if ($user->is($request->user()) && (($data['role'] ?? null) !== $user->role->value || ! ($data['is_active'] ?? true))) {
+            return back()->with('error', 'Anda tidak bisa mengubah peran atau menonaktifkan akun sendiri.');
         }
 
-        $user->delete();
+        $sebelum = $this->jejak($user);
+        $user->update($data);
+        Audit::catat('ubah_akun', $user, $sebelum, $this->jejak($user->refresh()));
 
-        return back()->with('success', "Pengguna {$user->name} dihapus.");
+        return back()->with('success', "Akun {$user->nama} diperbarui.");
+    }
+
+    public function destroy(Request $request, User $user): RedirectResponse
+    {
+        if ($user->is($request->user())) {
+            return back()->with('error', 'Anda tidak bisa menghapus akun sendiri.');
+        }
+        $sebelum = $this->jejak($user);
+        $user->delete();
+        Audit::catat('hapus_akun', 'User', $sebelum, null);
+
+        return back()->with('success', "Akun {$user->nama} dihapus.");
+    }
+
+    private function validasi(Request $request, ?User $user = null): array
+    {
+        $data = $request->validate([
+            'username_nip' => ['required', 'string', 'max:60', Rule::unique('users', 'username_nip')->ignore($user?->id)],
+            'nama' => ['required', 'string', 'max:100'],
+            'role' => ['required', Rule::enum(Role::class)],
+            'biller_id' => [
+                Rule::requiredIf(fn () => $request->input('role') === Role::Biller->value),
+                'nullable', 'integer', Rule::exists('billers', 'id'),
+                Rule::unique('users', 'biller_id')->ignore($user?->id),
+            ],
+            'password' => [$user ? 'nullable' : 'required', 'string', Password::min(8)],
+            'is_active' => ['boolean'],
+        ], [
+            'biller_id.required' => 'Akun Biller wajib ditautkan ke data biller.',
+            'biller_id.unique' => 'Biller ini sudah punya akun.',
+        ]);
+
+        if ($data['role'] !== Role::Biller->value) {
+            $data['biller_id'] = null;
+        }
+
+        return $data;
+    }
+
+    private function jejak(User $u): array
+    {
+        return $u->only(['username_nip', 'nama', 'biller_id', 'is_active']) + ['role' => $u->role->value];
     }
 }

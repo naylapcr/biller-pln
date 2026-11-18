@@ -8,15 +8,13 @@ enum StatusPeriode: string
 {
     use HasOptions;
 
-    case Draft = 'draft';
-    case Berjalan = 'berjalan';
+    case Terbuka = 'terbuka';
     case Ditutup = 'ditutup';
 
     public function label(): string
     {
         return match ($this) {
-            self::Draft => 'Draf',
-            self::Berjalan => 'Berjalan',
+            self::Terbuka => 'Terbuka',
             self::Ditutup => 'Ditutup',
         };
     }

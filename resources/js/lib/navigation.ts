@@ -1,33 +1,24 @@
 import type { Role } from '@/types';
 import {
+    CalendarCheck,
     CalendarRange,
-    ClipboardCheck,
     FileChartColumn,
-    FilePenLine,
-    Gauge,
     History,
     LayoutDashboard,
-    ListTodo,
+    Link2,
     type LucideIcon,
-    MapPinned,
-    Receipt,
-    RotateCcw,
-    Route,
-    Building2,
-    SlidersHorizontal,
     TrendingUp,
-    Unplug,
-    UserPlus,
+    Upload,
     UserRound,
     Users,
-    Zap,
+    UsersRound,
 } from 'lucide-react';
 
 export interface NavItem {
     /** Kunci unik, juga dipakai untuk navBadges. */
     id: string;
     label: string;
-    /** Nama route Ziggy. Bila route belum ada, item tampil nonaktif. */
+    /** Nama route Ziggy. Bila route belum ada, item disembunyikan. */
     route: string;
     /** Prefix URL untuk menandai item aktif (default: URL route). */
     match?: string;
@@ -41,73 +32,46 @@ export interface NavGroup {
 
 const PROFIL: NavItem = { id: 'profil', label: 'Profil saya', route: 'profil.edit', icon: UserRound };
 
-const LAYANAN: NavItem[] = [
-    { id: 'penagihan', label: 'Penagihan', route: 'penagihan.index', icon: Receipt },
-    { id: 'koreksi', label: 'Koreksi rekening', route: 'koreksi-rekening.index', icon: FilePenLine },
-    { id: 'pdil', label: 'PDIL', route: 'pdil.index', icon: UserPlus },
-    { id: 'tusbug', label: 'TUSBUG', route: 'tusbug.index', icon: Unplug },
+const PANTAU: NavItem[] = [
+    { id: 'dashboard', label: 'Dashboard', route: 'dashboard', icon: LayoutDashboard },
+    { id: 'biller', label: 'Kinerja biller', route: 'biller.index', icon: Users },
+    { id: 'laporan', label: 'Laporan', route: 'laporan.index', icon: FileChartColumn },
+];
+
+const DATA: NavItem[] = [
+    { id: 'unggah', label: 'Unggah data', route: 'unggah.index', icon: Upload },
+    { id: 'pemetaan', label: 'Pemetaan petugas', route: 'pemetaan.index', icon: Link2 },
+    { id: 'absensi', label: 'Absensi biller', route: 'absensi.index', icon: CalendarCheck },
 ];
 
 export const NAVIGATION: Record<Role, NavGroup[]> = {
     biller: [
         {
-            label: 'Pekerjaan saya',
+            label: 'Kinerja',
             items: [
-                { id: 'tugas', label: 'Tugas hari ini', route: 'tugas.index', icon: ListTodo },
-                { id: 'revisi', label: 'Perlu revisi', route: 'revisi.index', icon: RotateCcw },
-                { id: 'riwayat', label: 'Riwayat catatan', route: 'riwayat.index', icon: History },
-                { id: 'kinerja', label: 'Kinerja saya', route: 'kinerja.saya', icon: TrendingUp },
+                { id: 'skor', label: 'Skor saya', route: 'saya.skor', icon: TrendingUp },
+                { id: 'absensi', label: 'Absensi', route: 'saya.absensi', icon: CalendarCheck },
             ],
         },
-        { label: 'Layanan pelanggan', items: LAYANAN },
         { label: 'Akun', items: [PROFIL] },
     ],
-    koordinator_admin: [
-        {
-            label: 'Pantau',
-            items: [
-                { id: 'dashboard', label: 'Dashboard', route: 'dashboard', icon: LayoutDashboard },
-                { id: 'verifikasi', label: 'Verifikasi', route: 'verifikasi.index', icon: ClipboardCheck },
-                { id: 'laporan', label: 'Laporan', route: 'laporan.index', icon: FileChartColumn },
-            ],
-        },
-        {
-            label: 'Data lapangan',
-            items: [
-                { id: 'pencatatan', label: 'Pencatatan', route: 'pencatatan.index', icon: Gauge },
-                { id: 'pelanggan', label: 'Pelanggan', route: 'pelanggan.index', icon: Zap },
-                { id: 'rute', label: 'Rute', route: 'rute.index', icon: Route },
-                { id: 'biller', label: 'Biller', route: 'biller.index', icon: Users },
-            ],
-        },
-        { label: 'Layanan pelanggan', items: LAYANAN },
-        { label: 'Pengaturan', items: [PROFIL] },
+    admin: [
+        { label: 'Pantau', items: PANTAU },
+        { label: 'Data ACMT/AP2T', items: DATA },
+        { label: 'Akun', items: [PROFIL] },
     ],
     super_admin: [
-        {
-            label: 'Pantau',
-            items: [
-                { id: 'dashboard', label: 'Dashboard', route: 'dashboard', icon: LayoutDashboard },
-                { id: 'laporan', label: 'Laporan', route: 'laporan.index', icon: FileChartColumn },
-            ],
-        },
-        {
-            label: 'Data master',
-            items: [
-                { id: 'pengguna', label: 'Pengguna', route: 'pengaturan.users.index', icon: Users },
-                { id: 'unit', label: 'Unit', route: 'pengaturan.units.index', icon: Building2 },
-                { id: 'rute', label: 'Rute', route: 'pengaturan.rute.index', icon: MapPinned },
-                { id: 'pelanggan', label: 'Pelanggan', route: 'pengaturan.pelanggan.index', icon: Zap },
-                { id: 'tarif', label: 'Tarif', route: 'pengaturan.tarif.index', icon: Receipt },
-                { id: 'periode', label: 'Periode', route: 'pengaturan.periode.index', icon: CalendarRange },
-            ],
-        },
+        { label: 'Pantau', items: PANTAU },
+        { label: 'Data ACMT/AP2T', items: DATA },
         {
             label: 'Pengaturan',
             items: [
-                { id: 'kpi', label: 'Bobot dan ambang KPI', route: 'pengaturan.kpi.edit', icon: SlidersHorizontal },
-                PROFIL,
+                { id: 'periode', label: 'Periode & parameter', route: 'pengaturan.periode.index', icon: CalendarRange },
+                { id: 'billers', label: 'Master biller', route: 'pengaturan.billers.index', icon: UsersRound },
+                { id: 'pengguna', label: 'Pengguna', route: 'pengaturan.users.index', icon: UserRound },
+                { id: 'audit', label: 'Audit trail', route: 'pengaturan.audit.index', icon: History },
             ],
         },
+        { label: 'Akun', items: [PROFIL] },
     ],
 };

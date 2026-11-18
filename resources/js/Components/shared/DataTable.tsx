@@ -24,6 +24,8 @@ interface DataTableProps<T> {
     data: Paginated<T> | T[];
     getRowId?: (row: T) => string;
     rowClassName?: (row: T) => string | undefined;
+    /** Klik baris (misal membuka drawer rincian). */
+    onRowClick?: (row: T) => void;
     empty?: ReactNode;
     className?: string;
 }
@@ -32,7 +34,7 @@ interface DataTableProps<T> {
  * Tabel data: border rounded-14, header #F3F6F9, baris ≥ 58 px,
  * bisa digulir mendatar di HP, paginasi "Menampilkan x sampai y dari z".
  */
-export default function DataTable<T>({ columns, data, getRowId, rowClassName, empty, className }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, data, getRowId, rowClassName, onRowClick, empty, className }: DataTableProps<T>) {
     const rows = Array.isArray(data) ? data : data.data;
     const paginated = Array.isArray(data) ? null : data;
 
@@ -79,6 +81,7 @@ export default function DataTable<T>({ columns, data, getRowId, rowClassName, em
                             table.getRowModel().rows.map((row) => (
                                 <tr
                                     key={row.id}
+                                    onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                                     className={cn(
                                         'border-t border-line-row transition-colors hover:bg-table-head/50',
                                         rowClassName?.(row.original),

@@ -29,7 +29,7 @@ export default function Login({ status }: { status?: string | null }) {
             <img src="/images/logo-pln.png" alt="PLN" className="h-12 w-auto self-start" />
 
             <h2 className="mt-8 text-page-title text-ink">Masuk ke akun Anda</h2>
-            <p className="mt-1 text-sm text-muted-ink">Gunakan NIP atau email yang terdaftar di unit Anda.</p>
+            <p className="mt-1 text-sm text-muted-ink">Gunakan username atau NIP yang didaftarkan Super Admin.</p>
 
             {status && (
                 <Notice tone="success" className="mt-6">
@@ -38,14 +38,14 @@ export default function Login({ status }: { status?: string | null }) {
             )}
 
             <form onSubmit={submit} className="mt-8 grid gap-5" noValidate>
-                <FormField id="login" label="NIP atau email" required error={errors.login}>
+                <FormField id="login" label="Username atau NIP" required error={errors.login}>
                     <Input
                         id="login"
                         name="login"
                         autoComplete="username"
                         autoFocus
-                        inputMode="email"
-                        placeholder="Contoh: 199207202018011003"
+                        autoCapitalize="none"
+                        placeholder="Contoh: 18111.akmal"
                         value={data.login}
                         onChange={(e) => setData('login', e.target.value)}
                         aria-invalid={!!errors.login}
@@ -83,8 +83,8 @@ export default function Login({ status }: { status?: string | null }) {
                 </FormField>
 
                 {showHelp && (
-                    <Notice tone="info" title="Atur ulang kata sandi lewat admin unit">
-                        Hubungi koordinator atau admin unit Anda dan sebutkan NIP. Admin akan membuatkan kata sandi
+                    <Notice tone="info" title="Atur ulang kata sandi lewat Super Admin">
+                        Hubungi Super Admin dan sebutkan username Anda. Super Admin akan membuatkan kata sandi
                         sementara yang bisa Anda ganti di halaman Profil.
                     </Notice>
                 )}
@@ -106,7 +106,7 @@ export default function Login({ status }: { status?: string | null }) {
                 </Button>
             </form>
 
-            <p className="mt-6 text-center text-[13px] text-muted-ink">Akun dibuat oleh admin unit.</p>
+            <p className="mt-6 text-center text-[13px] text-muted-ink">Akun dibuat oleh Super Admin.</p>
         </AuthLayout>
     );
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Role;
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -15,38 +16,30 @@ test('halaman masuk tampil', function () {
 
 test('tamu diarahkan ke halaman masuk', function () {
     $this->get('/dashboard')->assertRedirect('/login');
-    $this->get('/tugas')->assertRedirect('/login');
+    $this->get('/saya/skor')->assertRedirect('/login');
     $this->get('/')->assertRedirect('/login');
 });
 
-test('tiap peran diarahkan ke halaman yang benar setelah login dengan NIP', function (Role $role, string $tujuan) {
-    $user = User::factory()->role($role)->create();
+test('tiap peran diarahkan ke halaman yang benar setelah login dengan username_nip', function (Role $role, string $tujuan) {
+    $user = $role === Role::Biller ? User::factory()->biller()->create() : User::factory()->role($role)->create();
 
-    $this->post('/login', ['login' => $user->nip, 'password' => 'password'])
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'password'])
         ->assertRedirect($tujuan);
 
     $this->assertAuthenticatedAs($user);
-    expect($user->fresh()->last_login_at)->not->toBeNull();
+    expect($user->fresh()->last_login_at)->not->toBeNull()
+        ->and(AuditLog::where('aksi', 'login')->where('user_id', $user->id)->exists())->toBeTrue();
 })->with([
-    'biller' => [Role::Biller, '/tugas'],
-    'koordinator admin' => [Role::KoordinatorAdmin, '/dashboard'],
+    'biller' => [Role::Biller, '/saya/skor'],
+    'koordinator admin' => [Role::Admin, '/dashboard'],
     'super admin' => [Role::SuperAdmin, '/dashboard'],
 ]);
-
-test('login dengan email (tidak peka huruf besar) berhasil', function () {
-    $user = User::factory()->role(Role::KoordinatorAdmin)->create(['email' => 'rina@biller.test']);
-
-    $this->post('/login', ['login' => 'Rina@Biller.test', 'password' => 'password'])
-        ->assertRedirect('/dashboard');
-
-    $this->assertAuthenticatedAs($user);
-});
 
 test('kata sandi salah ditolak dengan pesan Indonesia', function () {
     $user = User::factory()->create();
 
-    $this->post('/login', ['login' => $user->nip, 'password' => 'salah'])
-        ->assertSessionHasErrors(['login' => 'NIP/email atau kata sandi tidak sesuai.']);
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'salah'])
+        ->assertSessionHasErrors(['login' => 'Username/NIP atau kata sandi tidak sesuai.']);
 
     $this->assertGuest();
 });
@@ -54,32 +47,31 @@ test('kata sandi salah ditolak dengan pesan Indonesia', function () {
 test('akun nonaktif tidak bisa masuk', function () {
     $user = User::factory()->inactive()->create();
 
-    $this->post('/login', ['login' => $user->nip, 'password' => 'password'])
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'password'])
         ->assertSessionHasErrors('login');
 
     $this->assertGuest();
 });
 
-test('login dibatasi 5 percobaan per menit', function () {
+test('login dibatasi 5 percobaan per menit per username dan IP', function () {
     $user = User::factory()->create();
-    RateLimiter::clear(strtolower($user->nip).'|127.0.0.1');
+    RateLimiter::clear(strtolower($user->username_nip).'|127.0.0.1');
 
     foreach (range(1, 5) as $_) {
-        $this->post('/login', ['login' => $user->nip, 'password' => 'salah']);
+        $this->post('/login', ['login' => $user->username_nip, 'password' => 'salah']);
     }
 
-    $response = $this->post('/login', ['login' => $user->nip, 'password' => 'password']);
-
-    $response->assertSessionHasErrors('login');
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'password'])
+        ->assertSessionHasErrors('login');
     expect(session('errors')->first('login'))->toContain('Terlalu banyak percobaan');
     $this->assertGuest();
 });
 
 test('pengguna yang sudah masuk diarahkan dari /login ke beranda perannya', function () {
-    $biller = User::factory()->role(Role::Biller)->create();
+    $biller = User::factory()->biller()->create();
 
     $this->actingAs($biller)->get('/login')->assertRedirect('/');
-    $this->actingAs($biller)->get('/')->assertRedirect('/tugas');
+    $this->actingAs($biller)->get('/')->assertRedirect('/saya/skor');
 });
 
 test('logout mengakhiri sesi', function () {

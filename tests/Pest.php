@@ -1,50 +1,53 @@
 <?php
 
+use App\Enums\Role;
+use App\Models\Biller;
+use App\Models\Period;
+use App\Models\User;
+use App\Services\LayananPeriode;
+use Database\Seeders\DatabaseSeeder;
+use Database\Seeders\Support\ContohBerkasAcmt;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
-
-/*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind a different classes or traits.
-|
-*/
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
 /*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
+| Bantuan bersama untuk tes SIPERMON.
 */
 
-expect()->extend('toBeOne', function () {
-    return $this->toBe(1);
-});
-
-/*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
-
-function something()
+/** Master biller dari daftar petugas ACMT (default: 25 petugas ULP Kota Barat). */
+function buatBillers(?array $petugas = null): void
 {
-    // ..
+    foreach ($petugas ?? DatabaseSeeder::PETUGAS as [$login, $kode]) {
+        Biller::create(['nama' => ucfirst(strtolower(substr($login, 6))), 'login_acmt' => $login, 'kode_petugas_acmt' => $kode]);
+    }
+}
+
+function superAdmin(): User
+{
+    return User::query()->where('role', Role::SuperAdmin->value)->first() ?? User::factory()->superAdmin()->create();
+}
+
+function bukaPeriode(string $kode = '202611'): Period
+{
+    return Period::kode($kode) ?? app(LayananPeriode::class)->buka($kode, superAdmin());
+}
+
+/** Tulis berkas contoh ACMT ke folder sementara dan bungkus sebagai UploadedFile. */
+function berkasAcmt(callable $isi, ?array $petugas = null, string $blth = '202611', string $unitup = '18111', string $nama = 'DATA REKAP WBM.xlsx', int $seed = 202611): UploadedFile
+{
+    $path = sys_get_temp_dir().'/sipermon-'.uniqid().'.xlsx';
+    $isi(new ContohBerkasAcmt($petugas ?? DatabaseSeeder::PETUGAS, $blth, $unitup, $seed))->simpan($path);
+
+    return new UploadedFile($path, $nama, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true);
+}
+
+/** Petugas pendek untuk tes yang butuh angka pasti. */
+function petugasKecil(): array
+{
+    return [['18111.AKMAL', 'AWA'], ['18111.joni', 'ARA'], ['18111.deni', 'ALA']];
 }

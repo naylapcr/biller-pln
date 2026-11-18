@@ -8,11 +8,8 @@ use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-/**
- * Laporan peringkat biller satu periode ke Excel.
- */
+/** Laporan peringkat: angka mentah tiap komponen skor. */
 class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting, WithHeadings, WithTitle
 {
     /** @param  Collection<int, array<string, mixed>>  $baris */
@@ -26,9 +23,10 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
     public function headings(): array
     {
         return [
-            'Peringkat', 'Nama biller', 'NIP', 'Unit', 'Rute', 'Target', 'Tercatat (disetujui)', 'Terverifikasi',
-            'Disetujui tanpa revisi', 'Tepat waktu', 'Bukti lengkap', 'Akurasi (%)', 'Penyelesaian (%)',
-            'Tepat waktu (%)', 'Bukti lengkap (%)', 'Skor', 'Status',
+            'Peringkat', 'Nama biller', 'Login ACMT', 'Kode petugas', 'Zona',
+            'Pasca: terbaca', 'Pasca: kasus BU', 'Pasca: StanValid', 'Pasca: eviden (foto)', 'Pasca: poin',
+            'Prabayar: pemeriksaan', 'Prabayar: StanValid', 'Prabayar: eviden', 'Prabayar: poin',
+            'Poin tugas', 'Bonus Hari J', 'Total denda', 'Skor akhir', 'Kategori',
         ];
     }
 
@@ -37,37 +35,28 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
         return $this->baris->map(fn (array $b) => [
             $b['peringkat'],
             $b['nama'],
-            $b['nip'],
-            $b['unit'],
-            collect($b['rute'])->pluck('kode')->join(', '),
-            $b['target'],
-            $b['tercatat'],
-            $b['terverifikasi'],
-            $b['disetujui_tanpa_revisi'],
-            $b['jumlah_tepat_waktu'],
-            $b['jumlah_bukti_lengkap'],
-            $b['akurasi'],
-            $b['penyelesaian'],
-            $b['ketepatan_waktu'],
-            $b['bukti_lengkap'],
-            $b['skor'],
-            match ($b['status']) {
-                'pembinaan' => 'Perlu pembinaan',
-                'dipantau' => 'Dipantau',
-                default => $b['is_final'] ? 'Baik' : 'Sementara',
-            },
+            $b['login_acmt'],
+            $b['kode_petugas'],
+            $b['zona_wilayah'],
+            $b['pascabayar']['terbaca'] ?? null,
+            $b['pascabayar']['kasus_bu'] ?? null,
+            $b['pascabayar']['stan_valid'] ?? null,
+            $b['pascabayar']['eviden'] ?? null,
+            $b['pascabayar']['poin'] ?? null,
+            $b['prabayar']['pemeriksaan'] ?? null,
+            $b['prabayar']['stan_valid'] ?? null,
+            $b['prabayar']['eviden'] ?? null,
+            $b['prabayar']['poin'] ?? null,
+            $b['poin_tugas'],
+            $b['poin_hari_j'],
+            $b['total_denda'],
+            $b['final_score'],
+            $b['kategori'] === 'perlu_evaluasi' ? 'Perlu evaluasi' : 'Stabil',
         ])->all();
     }
 
     public function columnFormats(): array
     {
-        return [
-            'C' => NumberFormat::FORMAT_TEXT,
-            'L' => '0.00',
-            'M' => '0.00',
-            'N' => '0.00',
-            'O' => '0.00',
-            'P' => '0.00',
-        ];
+        return ['J' => '#,##0.00', 'N' => '#,##0.00', 'O' => '#,##0.00', 'P' => '#,##0.00', 'Q' => '#,##0.00', 'R' => '#,##0.00'];
     }
 }

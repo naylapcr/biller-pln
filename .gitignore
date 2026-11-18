@@ -22,3 +22,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Berkas contoh ACMT asli berisi data pelanggan; hanya disimpan lokal untuk tes penerimaan.
+/tests/fixtures/*.xlsx
+/storage/app/tmp

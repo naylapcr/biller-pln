@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Services\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -26,15 +27,15 @@ class AuthenticatedSessionController extends Controller
 
         $user = $request->user();
         $user->forceFill(['last_login_at' => now()])->saveQuietly();
+        Audit::catat('login', $user, null, null, $user->id);
 
-        // Biller → /tugas, koordinator & super admin → /dashboard.
+        // Biller → skor saya, Koordinator Admin & Super Admin → dashboard.
         return redirect()->route($user->role->homeRoute());
     }
 
     public function destroy(Request $request): RedirectResponse
     {
         Auth::guard('web')->logout();
-
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 

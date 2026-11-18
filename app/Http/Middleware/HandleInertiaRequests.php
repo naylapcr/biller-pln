@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\ActionInboxService;
+use App\Enums\StatusBatch;
+use App\Models\Period;
+use App\Models\UploadBatch;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -15,12 +17,9 @@ class HandleInertiaRequests extends Middleware
         return parent::version($request);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function share(Request $request): array
     {
-        $user = $request->user()?->loadMissing('unit');
+        $user = $request->user()?->loadMissing('biller:id,nama,login_acmt,kode_petugas_acmt');
 
         return [
             ...parent::share($request),
@@ -28,39 +27,25 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $user ? [
                     'id' => $user->id,
-                    'nip' => $user->nip,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'phone' => $user->phone,
+                    'username_nip' => $user->username_nip,
+                    'nama' => $user->nama,
                     'role' => $user->role->value,
                     'role_label' => $user->role->label(),
-                    'foto_url' => $user->fotoProfilUrl(),
-                    'unit' => $user->unit ? [
-                        'id' => $user->unit->id,
-                        'kode' => $user->unit->kode,
-                        'nama' => $user->unit->nama,
+                    'biller' => $user->biller ? [
+                        'id' => $user->biller->id,
+                        'login_acmt' => $user->biller->login_acmt,
+                        'kode_petugas' => $user->biller->kode_petugas_acmt,
                     ] : null,
                 ] : null,
             ],
-            // Jumlah antrean per menu (diisi ActionInboxService mulai Tahap 3).
-            'navBadges' => fn () => $user ? (object) app(ActionInboxService::class)->badges($user) : null,
-            // Lonceng: 8 notifikasi terbaru + jumlah yang belum dibaca.
-            'notifikasi' => fn () => $user ? [
-                'belum_dibaca' => $user->unreadNotifications()->count(),
-                'daftar' => $user->notifications()->latest()->limit(8)->get()->map(fn ($n) => [
-                    'id' => $n->id,
-                    'jenis' => $n->data['jenis'] ?? null,
-                    'judul' => $n->data['judul'] ?? 'Notifikasi',
-                    'pesan' => $n->data['pesan'] ?? '',
-                    'waktu' => $n->created_at->toIso8601String(),
-                    'dibaca' => $n->read_at !== null,
-                ]),
-            ] : null,
+            // Angka kecil di menu: batch yang menunggu commit.
+            'navBadges' => fn () => $user?->isAdmin() ? (object) [
+                'unggah' => UploadBatch::query()->where('status', StatusBatch::SiapCommit->value)
+                    ->whereIn('period_id', Period::query()->terbuka()->select('id'))->count(),
+            ] : (object) [],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
-                // Ringkasan hasil impor Excel pelanggan.
-                'impor' => fn () => $request->session()->get('impor'),
             ],
         ];
     }

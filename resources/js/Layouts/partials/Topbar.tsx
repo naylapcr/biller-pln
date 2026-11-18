@@ -7,7 +7,6 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
 import type { BreadcrumbItem, PageProps } from '@/types';
 import CommandSearch from './CommandSearch';
-import Lonceng from './Lonceng';
 
 function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
     return (
@@ -108,7 +107,6 @@ export default function Topbar({ breadcrumbs }: { breadcrumbs?: BreadcrumbItem[]
                 <span className="sr-only sm:hidden">Cari menu</span>
             </button>
 
-            <Lonceng />
 
             <CommandSearch open={searchOpen} onOpenChange={setSearchOpen} />
         </div>

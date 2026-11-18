@@ -3,31 +3,23 @@
 namespace App\Models;
 
 use App\Enums\Role;
-use App\Models\Concerns\AuditMaster;
 use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Storage;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use AuditMaster, HasFactory, Notifiable, SoftDeletes;
+    use HasFactory, Notifiable;
 
     protected $fillable = [
-        'unit_id',
-        'nip',
-        'name',
-        'email',
-        'phone',
+        'username_nip',
+        'nama',
         'password',
         'role',
-        'foto_profil_path',
+        'biller_id',
         'is_active',
         'last_login_at',
     ];
@@ -47,30 +39,10 @@ class User extends Authenticatable
         ];
     }
 
-    public function unit(): BelongsTo
+    /** Baris master biller milik akun ini (wajib untuk peran biller). */
+    public function biller(): BelongsTo
     {
-        return $this->belongsTo(Unit::class);
-    }
-
-    /** Rute yang dipegang biller ini. */
-    public function rute(): HasMany
-    {
-        return $this->hasMany(Rute::class, 'biller_id');
-    }
-
-    public function penugasan(): HasMany
-    {
-        return $this->hasMany(Penugasan::class, 'biller_id');
-    }
-
-    public function scopeBiller(Builder $query): void
-    {
-        $query->where('role', Role::Biller);
-    }
-
-    public function scopeAktif(Builder $query): void
-    {
-        $query->where('is_active', true);
+        return $this->belongsTo(Biller::class);
     }
 
     public function hasRole(Role|string ...$roles): bool
@@ -84,10 +56,8 @@ class User extends Authenticatable
         return false;
     }
 
-    public function fotoProfilUrl(): ?string
+    public function isAdmin(): bool
     {
-        return $this->foto_profil_path
-            ? Storage::disk('public')->url($this->foto_profil_path)
-            : null;
+        return $this->hasRole(Role::Admin, Role::SuperAdmin);
     }
 }

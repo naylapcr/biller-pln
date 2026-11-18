@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\Role;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -9,29 +8,31 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Master biller (PRD bagian 7). Data ACMT hanya memuat login dan kode petugas, jadi NIP boleh kosong.
+        Schema::create('billers', function (Blueprint $table) {
+            $table->id();
+            $table->string('nip', 30)->nullable()->unique();
+            $table->string('nama', 100);
+            $table->string('zona_wilayah', 100)->nullable();
+            $table->string('kode_petugas_acmt', 10)->unique();
+            $table->string('login_acmt', 60)->unique(); // selalu huruf kecil
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('unit_id')->nullable()->constrained('units')->restrictOnDelete();
-            $table->char('nip', 18)->unique();
-            $table->string('name', 100);
-            $table->string('email')->nullable()->unique();
-            $table->string('phone', 20)->nullable();
+            $table->string('username_nip', 60)->unique();
+            $table->string('nama', 100);
             $table->string('password');
-            $table->enum('role', Role::values());
-            $table->string('foto_profil_path')->nullable();
+            $table->string('role', 20); // super_admin, admin, biller
+            $table->foreignId('biller_id')->nullable()->unique()->constrained('billers')->restrictOnDelete();
             $table->boolean('is_active')->default(true);
             $table->timestamp('last_login_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
-            $table->softDeletes();
 
-            $table->index(['unit_id', 'role']);
-        });
-
-        Schema::create('password_reset_tokens', function (Blueprint $table) {
-            $table->string('email')->primary();
-            $table->string('token');
-            $table->timestamp('created_at')->nullable();
+            $table->index('role');
         });
 
         Schema::create('sessions', function (Blueprint $table) {
@@ -47,7 +48,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('sessions');
-        Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('users');
+        Schema::dropIfExists('billers');
     }
 };

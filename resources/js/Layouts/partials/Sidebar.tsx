@@ -21,8 +21,8 @@ function Brand() {
         <Link href={route('home')} className="flex min-w-0 items-center gap-3 rounded-10 px-2 py-1.5">
             <img src="/images/logo-pln-mark.png" alt="Logo PLN" className="size-9 shrink-0 rounded-[6px]" />
             <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-ink">Kinerja Biller</span>
-                <span className="block truncate text-xs text-muted-ink">{auth.user.unit?.nama ?? 'Semua unit'}</span>
+                <span className="block truncate text-sm font-semibold text-ink">SIPERMON</span>
+                <span className="block truncate text-xs text-muted-ink">SIPERMON · ULP Kota Barat</span>
             </span>
         </Link>
     );
@@ -78,17 +78,17 @@ function UserCard() {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-14 bg-white p-2.5 text-left ring-1 ring-border outline-none hover:bg-table-head focus-visible:ring-[3px] focus-visible:ring-pln-blue/25">
-                <UserAvatar name={user.name} src={user.foto_url} size={36} />
+                <UserAvatar name={user.nama} size={36} />
                 <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-ink">{user.name}</span>
+                    <span className="block truncate text-sm font-medium text-ink">{user.nama}</span>
                     <span className="block truncate text-xs text-muted-ink">{user.role_label}</span>
                 </span>
                 <ChevronsUpDown className="size-4 shrink-0 text-muted-ink" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
                 <DropdownMenuLabel>
-                    <span className="block font-medium">{user.name}</span>
-                    <span className="block font-mono text-xs text-muted-ink">NIP {user.nip}</span>
+                    <span className="block font-medium">{user.nama}</span>
+                    <span className="block font-mono text-xs text-muted-ink">{user.username_nip}</span>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

@@ -2,174 +2,177 @@
 
 namespace App\Http\Controllers\Pengaturan;
 
-use App\Enums\StatusPeriode;
+use App\Enums\StatusBatch;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Pengaturan\PeriodeRequest;
-use App\Models\Penugasan;
-use App\Models\Periode;
-use App\Models\Rute;
-use App\Services\PeriodeService;
-use App\Support\Opsi;
-use Carbon\CarbonImmutable;
+use App\Models\MonthlyScore;
+use App\Models\Period;
+use App\Models\ScoringRule;
+use App\Models\UploadBatch;
+use App\Services\Audit;
+use App\Services\LayananPeriode;
+use App\Services\ParameterSkor;
+use App\Services\PenghitungSkor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/** Periode (BLTH): buka, parameter skor, hitung ulang, dan tutup (Super Admin). */
 class PeriodeController extends Controller
 {
-    public function __construct(private readonly PeriodeService $service) {}
+    public function __construct(
+        private readonly LayananPeriode $layanan,
+        private readonly ParameterSkor $parameter,
+    ) {}
 
-    public function index(Request $request): Response
+    public function index(): Response
     {
-        $this->authorize('viewAny', Periode::class);
-
-        $periode = Periode::query()
-            ->with('penutup:id,name')
-            ->withCount('penugasan')
-            ->withSum('penugasan', 'target_pelanggan')
-            ->orderByDesc('kode')
-            ->paginate(25)
-            ->through(fn (Periode $p) => $this->ringkas($p) + [
-                'penugasan_count' => $p->penugasan_count,
-                'target_total' => (int) $p->penugasan_sum_target_pelanggan,
-            ]);
-
-        $terakhir = Periode::max('kode');
-        $bulanBerikutnya = $terakhir
-            ? CarbonImmutable::createFromFormat('Ym', $terakhir)->startOfMonth()->addMonth()
-            : now()->toImmutable()->startOfMonth();
-
         return Inertia::render('Pengaturan/Periode/Index', [
-            'periode' => $periode,
-            'saran' => [
-                'bulan' => $bulanBerikutnya->format('Y-m'),
-                'tanggal_mulai' => $bulanBerikutnya->toDateString(),
-                'tanggal_selesai' => $bulanBerikutnya->endOfMonth()->toDateString(),
-            ],
-            'adaBerjalan' => Periode::berjalan()?->kode,
+            'periode' => Period::query()->with('penutup:id,nama')->orderByDesc('kode')->get()->map(fn (Period $p) => [
+                'kode' => $p->kode,
+                'nama' => $p->nama(),
+                'status' => $p->status->value,
+                'terbuka' => $p->terbuka(),
+                'ditutup_at' => $p->ditutup_at?->toIso8601String(),
+                'penutup' => $p->penutup?->nama,
+                'batch_committed' => UploadBatch::query()->committed()->where('period_id', $p->id)->pluck('modul')->map->label()->values(),
+                'jumlah_skor' => MonthlyScore::query()->where('period_id', $p->id)->count(),
+                'parameter_kosong' => $this->parameter->kosongWajib($p),
+            ]),
         ]);
     }
 
-    public function store(PeriodeRequest $request): RedirectResponse
+    public function store(Request $request): RedirectResponse
     {
-        $periode = $this->service->buat(
-            $request->kode(),
-            $request->validated('tanggal_mulai'),
-            $request->validated('tanggal_selesai'),
-        );
-        $jumlah = $periode->penugasan()->count();
+        $data = $request->validate([
+            'kode' => ['required', 'string', 'regex:/^20\d{2}(0[1-9]|1[0-2])$/', Rule::unique('periods', 'kode')],
+        ], ['kode.regex' => 'Kode periode berformat BLTH, contoh 202611.', 'kode.unique' => 'Periode ini sudah ada.']);
 
-        return to_route('pengaturan.periode.show', $periode)
-            ->with('success', "Periode {$periode->kode} dibuat dengan {$jumlah} penugasan dari biller pemegang rute.");
+        $periode = $this->layanan->buka($data['kode'], $request->user());
+
+        return to_route('pengaturan.periode.show', $periode->kode)->with('success', "Periode {$periode->kode} dibuka. Parameter disalin dari periode sebelumnya.");
     }
 
-    public function show(Periode $periode): Response
+    public function show(string $kode): Response
     {
-        $this->authorize('view', $periode);
-        $periode->load('penutup:id,name');
-
-        $penugasan = Penugasan::query()
-            ->where('periode_id', $periode->id)
-            // select() harus sebelum withCount() agar kolom hitungan tidak tertimpa.
-            ->select('penugasan.*')
-            ->with(['rute:id,kode,nama,kelurahan,unit_id', 'rute.unit:id,nama', 'biller:id,name,nip,is_active'])
-            ->withCount('pencatatanMeter')
-            ->join('rute', 'rute.id', '=', 'penugasan.rute_id')
-            ->orderBy('rute.unit_id')
-            ->orderBy('rute.kode')
-            ->get()
-            ->map(fn (Penugasan $p) => [
-                'id' => $p->id,
-                'rute_id' => $p->rute_id,
-                'rute' => ['kode' => $p->rute->kode, 'nama' => $p->rute->nama, 'unit_id' => $p->rute->unit_id, 'unit' => $p->rute->unit->nama],
-                'biller_id' => $p->biller_id,
-                'biller' => ['name' => $p->biller->name, 'nip' => $p->biller->nip, 'is_active' => $p->biller->is_active],
-                'target_pelanggan' => $p->target_pelanggan,
-                'pencatatan_count' => $p->pencatatan_meter_count,
-            ]);
-
-        $ruteTanpaPenugasan = Rute::query()
-            ->aktif()
-            ->whereNotIn('id', $penugasan->pluck('rute_id'))
-            ->with('unit:id,nama')
-            ->withCount(['pelanggan as pelanggan_aktif_count' => fn ($q) => $q->where('status', 'aktif')])
-            ->orderBy('unit_id')
-            ->orderBy('kode')
-            ->get()
-            ->map(fn (Rute $r) => [
-                'id' => $r->id,
-                'kode' => $r->kode,
-                'nama' => $r->nama,
-                'unit_id' => $r->unit_id,
-                'unit' => $r->unit->nama,
-                'biller_id' => $r->biller_id,
-                'pelanggan_aktif_count' => $r->pelanggan_aktif_count,
-            ]);
+        $periode = Period::where('kode', $kode)->firstOrFail();
+        $rules = ScoringRule::query()->where('period_id', $periode->id)->with('pengubah:id,nama')->get()->keyBy('kunci');
 
         return Inertia::render('Pengaturan/Periode/Show', [
-            'periode' => $this->ringkas($periode),
-            'penugasan' => $penugasan,
-            'ruteTanpaPenugasan' => $ruteTanpaPenugasan,
-            'billers' => Opsi::biller(),
-            'can' => [
-                'ubah' => request()->user()->can('update', $periode),
-                'mulai' => request()->user()->can('mulai', $periode),
-                'tutup' => request()->user()->can('tutup', $periode),
-                'hapus' => request()->user()->can('delete', $periode),
+            'periode' => [
+                'kode' => $periode->kode,
+                'nama' => $periode->nama(),
+                'terbuka' => $periode->terbuka(),
+                'ditutup_at' => $periode->ditutup_at?->toIso8601String(),
+                'absensi_mulai' => $periode->absensi_mulai?->toDateString(),
+                'absensi_selesai' => $periode->absensi_selesai?->toDateString(),
             ],
+            'parameter' => $this->parameter->untuk($periode),
+            'bawaan' => ParameterSkor::bawaan(),
+            'wajib' => config('sipermon.parameter_wajib'),
+            'kosong' => $this->parameter->kosongWajib($periode),
+            'diubah' => $rules->filter(fn ($r) => $r->diubah_oleh)->map(fn ($r) => [
+                'oleh' => $r->pengubah?->nama, 'waktu' => $r->updated_at?->toIso8601String(),
+            ]),
+            'batchMenunggu' => UploadBatch::query()->where('period_id', $periode->id)
+                ->whereIn('status', [StatusBatch::Diproses->value, StatusBatch::SiapCommit->value])->count(),
         ]);
     }
 
-    public function update(PeriodeRequest $request, Periode $periode): RedirectResponse
+    public function updateRules(Request $request, string $kode): RedirectResponse
     {
-        $periode->update($request->safe()->only(['tanggal_mulai', 'tanggal_selesai']));
+        $periode = Period::where('kode', $kode)->firstOrFail();
+        $data = $request->validate([
+            'w_stan' => ['required', 'numeric', 'min:0'],
+            'w_eviden' => ['required', 'numeric', 'min:0'],
+            'mode_agregasi' => ['required', Rule::in(['jumlah', 'rata_rata_modul'])],
+            'bonus_min_j' => ['required', 'numeric', 'min:0'],
+            'bonus_max_j' => ['required', 'numeric', 'gte:bonus_min_j'],
+            'bonus_dasar_j' => ['nullable', 'numeric'],
+            'poin_per_plg_j' => ['nullable', 'numeric'],
+            'denda_bu_per_kasus' => ['required', 'numeric', 'min:0'],
+            'denda_ap2t_tingkat' => ['required', 'array'],
+            'denda_ap2t_tingkat.min' => ['required', 'numeric', 'min:0'],
+            'denda_ap2t_tingkat.max' => ['required', 'numeric', 'gte:denda_ap2t_tingkat.min'],
+            'denda_ap2t_tingkat.tingkat' => ['nullable', 'array'],
+            'denda_ap2t_tingkat.tingkat.*' => ['numeric', 'min:0'],
+            'kdbaca_normal' => ['required', 'array', 'min:1'],
+            'kdbaca_normal.*' => ['string', 'max:5'],
+            'denda_alpa_per_hari' => ['required', 'numeric', 'min:0'],
+            'absensi_hari_kerja' => ['required', 'array', 'min:1'],
+            'absensi_hari_kerja.*' => ['integer', 'between:1,7'],
+            'absensi_hari_libur' => ['nullable', 'array'],
+            'absensi_hari_libur.*' => ['date_format:Y-m-d'],
+            'absensi_mulai' => ['required', 'date_format:Y-m-d'],
+            'absensi_selesai' => ['required', 'date_format:Y-m-d', 'after_or_equal:absensi_mulai'],
+            'ambang_evaluasi' => ['required', 'numeric'],
+            'jumlah_top' => ['required', 'integer', 'between:1,25'],
+            'jumlah_bottom' => ['required', 'integer', 'between:1,25'],
+        ]);
 
-        return back()->with('success', "Jadwal periode {$periode->kode} diperbarui.");
-    }
+        $angka = fn ($v) => $v === null || $v === '' ? null : (float) $v;
+        $data = array_merge($data, [
+            'w_stan' => $angka($data['w_stan']),
+            'w_eviden' => $angka($data['w_eviden']),
+            'bonus_min_j' => $angka($data['bonus_min_j']),
+            'bonus_max_j' => $angka($data['bonus_max_j']),
+            'bonus_dasar_j' => $angka($data['bonus_dasar_j'] ?? null),
+            'poin_per_plg_j' => $angka($data['poin_per_plg_j'] ?? null),
+            'denda_bu_per_kasus' => $angka($data['denda_bu_per_kasus']),
+            'ambang_evaluasi' => $angka($data['ambang_evaluasi']),
+            'denda_alpa_per_hari' => $angka($data['denda_alpa_per_hari']),
+            'absensi_hari_kerja' => array_values(array_unique(array_map('intval', $data['absensi_hari_kerja']))),
+            'absensi_hari_libur' => array_values(array_unique($data['absensi_hari_libur'] ?? [])),
+            'jumlah_top' => (int) $data['jumlah_top'],
+            'jumlah_bottom' => (int) $data['jumlah_bottom'],
+            'kdbaca_normal' => array_values(array_unique(array_map(fn ($k) => strtoupper(trim($k)), $data['kdbaca_normal']))),
+            'denda_ap2t_tingkat' => [
+                'min' => (float) $data['denda_ap2t_tingkat']['min'],
+                'max' => (float) $data['denda_ap2t_tingkat']['max'],
+                'tingkat' => (object) array_map('floatval', $data['denda_ap2t_tingkat']['tingkat'] ?? []),
+            ],
+        ]);
 
-    public function destroy(Periode $periode): RedirectResponse
-    {
-        $this->authorize('delete', $periode);
-
-        $periode->penugasan()->delete();
-        $periode->delete();
-
-        return to_route('pengaturan.periode.index')->with('success', "Periode {$periode->kode} dihapus.");
-    }
-
-    public function mulai(Periode $periode): RedirectResponse
-    {
-        $this->authorize('mulai', $periode);
-
-        $this->service->mulai($periode);
-
-        return back()->with('success', "Periode {$periode->kode} dimulai. Biller sudah bisa mencatat meter.");
-    }
-
-    public function tutup(Request $request, Periode $periode): RedirectResponse
-    {
-        $this->authorize('tutup', $periode);
-
-        $this->service->tutup($periode, $request->user());
-
-        return back()->with('success', "Periode {$periode->kode} ditutup. Catatan periode ini tidak bisa diubah lagi.");
-    }
-
-    /** @return array<string, mixed> */
-    private function ringkas(Periode $p): array
-    {
-        return [
-            'id' => $p->id,
-            'kode' => $p->kode,
-            'nama' => $p->nama(),
-            'tanggal_mulai' => $p->tanggal_mulai->toDateString(),
-            'tanggal_selesai' => $p->tanggal_selesai->toDateString(),
-            'status' => $p->status->value,
-            'status_label' => $p->status->label(),
-            'ditutup_at' => $p->ditutup_at?->toIso8601String(),
-            'ditutup_oleh' => $p->relationLoaded('penutup') ? $p->penutup?->name : null,
-            'bisa_diubah' => $p->status !== StatusPeriode::Ditutup,
+        // Rentang tanggal absensi disimpan di periode, bukan di scoring_rules.
+        $rentang = ['absensi_mulai' => $data['absensi_mulai'], 'absensi_selesai' => $data['absensi_selesai']];
+        unset($data['absensi_mulai'], $data['absensi_selesai']);
+        $rentangLama = [
+            'absensi_mulai' => $periode->absensi_mulai?->toDateString(),
+            'absensi_selesai' => $periode->absensi_selesai?->toDateString(),
         ];
+        if ($rentang !== $rentangLama) {
+            if (! $periode->terbuka()) {
+                return back()->with('error', "Periode {$periode->kode} sudah ditutup; rentang absensi terkunci.");
+            }
+            $periode->update($rentang);
+            Audit::catat('ubah_rentang_absensi', $periode, $rentangLama, $rentang);
+        }
+
+        $this->parameter->ubah($periode, json_decode(json_encode($data), true), $request->user());
+        if ($rentang !== $rentangLama) {
+            app(PenghitungSkor::class)->hitung($periode);
+        }
+
+        return back()->with('success', 'Parameter disimpan dan skor periode dihitung ulang.');
+    }
+
+    public function recalculate(Request $request, string $kode): RedirectResponse
+    {
+        $this->layanan->hitungUlang(Period::where('kode', $kode)->firstOrFail(), $request->user());
+
+        return back()->with('success', 'Skor periode dihitung ulang.');
+    }
+
+    public function close(Request $request, string $kode): RedirectResponse
+    {
+        try {
+            $this->layanan->tutup(Period::where('kode', $kode)->firstOrFail(), $request->user());
+        } catch (ValidationException $e) {
+            return back()->with('error', collect($e->errors())->flatten()->first());
+        }
+
+        return back()->with('success', "Periode {$kode} ditutup. Skor final tersimpan dan data terkunci.");
     }
 }
