@@ -15,8 +15,8 @@
         "forceConsistentCasingInFileNames": true,
         "types": ["vite/client"],
         "paths": {
-            "@/*": ["./resources/js/*"]
+            "@/*": ["./src/*"]
         }
     },
-    "include": ["resources/js/**/*.ts", "resources/js/**/*.tsx"]
+    "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

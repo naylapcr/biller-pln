@@ -6,16 +6,31 @@ Acuan: *PRD Backend SIPERMON — Kinerja Biller (Upload ACMT/AP2T)*, 17 Nov 2026
 
 Stack: Laravel 12, Inertia 2 + React 19 + TypeScript, Tailwind v4. Basis data: PostgreSQL (Supabase) untuk produksi; MySQL atau SQLite juga jalan untuk pengembangan.
 
+## Struktur folder
+
+```
+biller-pln/
+├── backend/    Laravel: app, routes, config, database, tests, public, resources/views
+└── frontend/   React + TypeScript + Vite: src/ (Pages, Components, Layouts, hooks, lib)
+```
+
+Frontend tetap dirender lewat Inertia. Vite berjalan dari `frontend/`, membaca `backend/.env`, dan menulis hasil build ke `backend/public/build` (mode dev: `backend/public/hot`).
+
 ## Menjalankan di lokal
 
 ```bash
-composer install
+# frontend
+cd frontend
 npm install
+npm run build               # atau `npm run dev`
+
+# backend
+cd ../backend
+composer install
 cp .env.example .env        # sesuaikan DB_*
 php artisan key:generate
 php artisan migrate:fresh --seed
-npm run build               # atau `npm run dev`
-composer dev                # server + queue worker + vite
+composer dev                # server + queue worker + vite (frontend)
 ```
 
 Parsing berkas berjalan di antrean, jadi **queue worker harus hidup**. `composer dev` sudah menjalankannya. Kalau memakai `php artisan serve` saja, jalankan juga `php artisan queue:work` di terminal lain. Tanpa worker, batch akan tertahan di status "Sedang diproses".
