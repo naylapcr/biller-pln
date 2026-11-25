@@ -57,14 +57,14 @@ test('PASCA GANDAINDUSTRI: 7 baris, 5 login, Σ TERBACA = 7; KODE_RBM cocok di s
         ->and(collect(uraiAsli(Modul::PascabayarTunggal)->issues)->where('kode', 'RBM_TIDAK_COCOK'))->toHaveCount(0);
 });
 
-test('BACA ULANG PASCA: 996 baris, 934 IDPEL unik, dan hasil penilaian aturan 6.3', function () {
+test('BACA ULANG PASCA: 996 baris, 934 IDPEL unik, dan hasil penilaian aturan 6.2', function () {
     $h = uraiAsli(Modul::BacaUlang);
 
     expect($h->ringkasan['baris'])->toBe(996)
         ->and($h->ringkasan['idpel_unik'])->toBe(934)
         ->and($h->ringkasan['sudah_baca'])->toBe(970)
         ->and($h->ringkasan['belum_baca'])->toBe(26)
-        ->and($h->ringkasan['hasil'])->toBe(['salah_turun' => 213, 'salah_lebih' => 554, 'wajar' => 197, 'tidak_dinilai' => 32])
+        ->and($h->ringkasan['hasil'])->toBe(['salah_turun' => 213, 'salah_lebih' => 554, 'sama' => 104, 'wajar' => 93, 'tidak_dinilai' => 32])
         ->and(collect($h->issues)->where('kode', 'PETUGAS_TIDAK_DIKENAL')->count())->toBe(48)
         ->and(collect($h->issues)->where('kode', 'PETUGAS_TIDAK_DIKENAL')->every(fn ($i) => str_contains($i['pesan'], '18111.ilmenhadi')))->toBeTrue()
         ->and($h->adaError())->toBeFalse()

@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Pengaturan SIPERMON (PRD Backend, bagian 3, 6, dan 9).
+ * Pengaturan SIPERMON (PRD Backend, bagian 3, 4, 6, dan 9).
  */
 return [
     // Kode UNITUP yang diterima (ULP Kota Barat). Berkas dengan UNITUP lain ditolak UNIT_MISMATCH.
@@ -15,45 +15,67 @@ return [
         'bujur_max' => 101.6,
     ],
 
-    // Disk tempat berkas asli disimpan selama 2 tahun. Untuk Supabase Storage, isi disk S3
-    // (endpoint Supabase) di config/filesystems.php lalu ganti nilai ini.
+    // Disk berkas asli. Produksi: 's3' (bucket privat acmt-uploads di Supabase Storage).
+    // Pengembangan tanpa Supabase: 'unggahan' (folder lokal storage/app/private/unggahan).
     'disk_unggahan' => env('SIPERMON_UPLOAD_DISK', 'unggahan'),
 
-    // Ukuran berkas maksimal (KB) dan jumlah baris per potongan saat membaca berkas.
-    'maks_berkas_kb' => 20 * 1024,
+    // Unduhan berkas asli lewat URL bertanda tangan berumur sekian menit.
+    'umur_url_unduhan_menit' => 5,
+
+    // Ukuran berkas maksimal (KB) sesuai desain Portal Unggah, dan baris per potongan saat membaca berkas.
+    'maks_berkas_kb' => 25 * 1024,
     'baris_per_potongan' => 3000,
 
     // Staging dihapus setelah commit atau setelah berumur sekian hari.
     'umur_staging_hari' => 30,
 
     /*
-     * Parameter skor bawaan (PRD 6.2). Disalin ke scoring_rules saat periode pertama dibuat;
+     * Absensi mandiri (PRD 4). Tidak dipakai dalam skor. MarkAbsentJob mencatat alpa pukul 23.59 WIB
+     * pada hari kerja untuk Biller dan Koordinator aktif yang belum absen. Daftar hari kerja masih
+     * menunggu jawaban pertanyaan terbuka no. 8; sementara Senin–Sabtu.
+     */
+    'absensi' => [
+        'hari_kerja' => [1, 2, 3, 4, 5, 6], // ISO: 1 = Senin … 7 = Minggu
+        'hari_libur' => [],                  // tanggal libur, contoh ["2026-12-25"]
+    ],
+
+    /*
+     * Toleransi (menit) jendela hari baca RBM saat menandai kasus Baca Ulang sebagai sisipan. PRD 6.2 tidak
+     * menyebut angkanya; 5 menit diturunkan dari data BLTH 202611 agar hasilnya sama dengan kriteria terima
+     * (19 sisipan, 17 di antaranya salah, 750 kasus masuk rasio).
+     */
+    'toleransi_sisipan_menit' => 5,
+
+    /*
+     * Parameter skor bawaan (PRD 6.3). Disalin ke scoring_rules saat periode pertama dibuat;
      * periode berikutnya menyalin dari periode sebelumnya. null = belum ditetapkan.
      */
     'parameter' => [
-        'w_stan' => 4.0,
-        'w_eviden' => 1.5,
-        'mode_agregasi' => 'jumlah', // jumlah | rata_rata_modul
-        'bonus_min_j' => 50,
-        'bonus_max_j' => 150,
-        'bonus_dasar_j' => null,
-        'poin_per_plg_j' => null,
-        'denda_bu_per_kasus' => 10,
-        // Denda AP2T per kasus menurut tingkat, contoh {"ringan": 15, "berat": 50}. Batas tiap tingkat belum ditetapkan.
-        'denda_ap2t_tingkat' => ['min' => 15, 'max' => 50, 'tingkat' => (object) []],
+        // Bobot nilai pascabayar (persen, total 100).
+        'w_realisasi' => 40,
+        'w_eviden' => 30,
+        'w_kecepatan' => 30,
+        // Standar 200 pelanggan per 6 jam kerja → 33,3 pelanggan per jam.
+        'jam_kerja_per_hari' => 6,
+        'sla_plg_per_jam' => 33.3333,
+        // Toleransi pembulatan saat menilai Baca Ulang (kWh).
+        'toleransi_kwh' => 1,
         'kdbaca_normal' => ['Z'],
-        // Absensi diisi biller sendiri. Hari kerja tanpa absensi = alpa.
-        'denda_alpa_per_hari' => 0,
-        'absensi_hari_kerja' => [1, 2, 3, 4, 5, 6], // ISO: 1 = Senin … 7 = Minggu
-        'absensi_hari_libur' => [],                  // tanggal libur, contoh ["2026-11-10"]
-        'ambang_evaluasi' => 1800,
+        // Jadwal baca prabayar: tanggal di bulan sebelum BLTH (BLTH 202611 → 5–20 Oktober 2026).
+        'prabayar_mulai' => 5,
+        'prabayar_selesai' => 20,
+        // Bonus Hari J maksimal (poin) = bobot × persentase penuntasan Hari J.
+        'bobot_bonus_j' => 5.0,
+        // Ambang kategori pada skala 0–100.
+        'ambang_grade_a' => 85.0,
+        'ambang_kritis' => 65.0,
         'jumlah_top' => 5,
         'jumlah_bottom' => 5,
     ],
 
     // Parameter yang wajib terisi sebelum periode bisa ditutup.
     'parameter_wajib' => [
-        'w_stan', 'w_eviden', 'mode_agregasi', 'bonus_min_j', 'bonus_max_j', 'bonus_dasar_j',
-        'poin_per_plg_j', 'denda_bu_per_kasus', 'kdbaca_normal', 'ambang_evaluasi', 'jumlah_top', 'jumlah_bottom',
+        'w_realisasi', 'w_eviden', 'w_kecepatan', 'jam_kerja_per_hari', 'sla_plg_per_jam', 'kdbaca_normal',
+        'prabayar_mulai', 'prabayar_selesai', 'bobot_bonus_j', 'ambang_grade_a', 'ambang_kritis',
     ],
 ];

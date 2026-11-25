@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\PeringkatExport;
+use App\Http\Controllers\Concerns\PilihPeriode;
 use App\Models\MonthlyScore;
 use App\Models\Period;
 use App\Services\Audit;
@@ -19,31 +20,26 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 /** Ekspor laporan peringkat per periode (xlsx atau pdf). */
 class LaporanController extends Controller
 {
-    public function index(): InertiaResponse
+    use PilihPeriode;
+
+    /** Laporan & Ekspor (02.8): status periode (sementara atau final), pratinjau peringkat, unduh XLSX/PDF. */
+    public function index(Request $request, LaporanKinerja $laporan): InertiaResponse
     {
-        $periode = Period::query()->whereIn('id', MonthlyScore::select('period_id'))->orderByDesc('kode')->get()
-            ->map(function (Period $p) {
-                $skor = MonthlyScore::where('period_id', $p->id);
+        $periode = $this->periode($request);
 
-                return [
-                    'kode' => $p->kode,
-                    'nama' => $p->nama(),
-                    'final' => ! $p->terbuka(),
-                    'jumlah_biller' => (clone $skor)->count(),
-                    'rata' => round((float) (clone $skor)->avg('final_score'), 2),
-                    'total_denda' => round((float) (clone $skor)->sum('total_denda'), 2),
-                    'dihitung_at' => (clone $skor)->max('dihitung_at'),
-                ];
-            });
-
-        return Inertia::render('Laporan/Index', ['periode' => $periode]);
+        return Inertia::render('Koordinator/Laporan', [
+            'periode' => $this->infoPeriode($periode),
+            'periodeOptions' => $this->opsiPeriode(),
+            'baris' => $periode ? $this->baris($periode, $laporan) : [],
+            'dihitungAt' => $periode ? MonthlyScore::where('period_id', $periode->id)->max('dihitung_at') : null,
+        ]);
     }
 
     public function unduh(Request $request, string $kode, string $format, LaporanKinerja $laporan): BinaryFileResponse|Response
     {
         $periode = Period::where('kode', $kode)->firstOrFail();
         $baris = $this->baris($periode, $laporan);
-        Audit::catat('ekspor_laporan', $periode, null, ['format' => $format]);
+        Audit::catat(Audit::EXPORT_REPORT, $periode, null, ['format' => $format]);
         $nama = "peringkat-biller-{$periode->kode}.{$format}";
 
         if ($format === 'xlsx') {
@@ -57,6 +53,14 @@ class LaporanController extends Controller
             'dicetak' => now(),
             'oleh' => $request->user()->nama,
         ])->setPaper('a4', 'landscape')->download($nama);
+    }
+
+    /** Super Admin hanya mengunduh arsip periode yang sudah ditutup (04.2). */
+    public function unduhFinal(Request $request, string $kode, string $format, LaporanKinerja $laporan): BinaryFileResponse|Response
+    {
+        abort_if(Period::where('kode', $kode)->firstOrFail()->terbuka(), 409, 'Arsip tersedia setelah periode ditutup.');
+
+        return $this->unduh($request, $kode, $format, $laporan);
     }
 
     /** @return Collection<int, array<string, mixed>> */

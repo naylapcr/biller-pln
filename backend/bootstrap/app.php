@@ -38,13 +38,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 return back()->with('error', 'Sesi Anda sudah berakhir. Silakan coba lagi.');
             }
 
+            // Konflik (contoh: absen kedua di hari yang sama) dari formulir: kembali dengan pesan.
+            if ($status === 409 && ! $request->expectsJson()) {
+                return back()->with('error', $e->getMessage() ?: 'Permintaan tidak bisa diproses.');
+            }
+
             $tampilkan = [403, 404, 503];
             if (! app()->hasDebugModeEnabled()) {
                 $tampilkan[] = 500;
             }
 
             if (in_array($status, $tampilkan, true) && ! $request->expectsJson()) {
-                return Inertia::render('Error', [
+                return Inertia::render('Umum/Error', [
                     'status' => $status,
                     'message' => $status === 403 ? ($e->getMessage() ?: null) : null,
                 ])->toResponse($request)->setStatusCode($status);

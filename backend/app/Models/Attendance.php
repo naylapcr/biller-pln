@@ -6,28 +6,36 @@ use App\Enums\StatusAbsensi;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Absensi harian biller: diisi sendiri (hadir/izin/sakit) atau dikoreksi Koordinator Admin. */
+/**
+ * Absensi harian Biller dan Koordinator Admin (PRD 4). sumber = mandiri (diisi sendiri) atau
+ * sistem (alpa otomatis oleh MarkAbsentJob). Koreksi hanya oleh Super Admin dengan alasan wajib.
+ */
 class Attendance extends Model
 {
-    protected $table = 'attendance';
+    protected $table = 'attendances';
 
-    protected $fillable = ['biller_id', 'tanggal', 'status', 'keterangan', 'sumber', 'dicatat_oleh', 'batch_id'];
+    protected $fillable = [
+        'user_id', 'tanggal', 'status', 'absen_at', 'lat', 'lng', 'keterangan', 'sumber', 'dikoreksi_oleh', 'alasan_diubah',
+    ];
 
     protected function casts(): array
     {
         return [
             'tanggal' => 'immutable_date',
             'status' => StatusAbsensi::class,
+            'absen_at' => 'datetime',
+            'lat' => 'float',
+            'lng' => 'float',
         ];
     }
 
-    public function biller(): BelongsTo
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Biller::class);
+        return $this->belongsTo(User::class);
     }
 
-    public function pencatat(): BelongsTo
+    public function pengoreksi(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'dicatat_oleh');
+        return $this->belongsTo(User::class, 'dikoreksi_oleh');
     }
 }

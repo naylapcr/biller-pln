@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\Modul;
+use App\Jobs\MarkAbsentJob;
 use App\Jobs\PurgeStagingJob;
 use App\Models\Period;
 use App\Models\User;
+use App\Services\LayananAbsensi;
 use App\Services\LayananPeriode;
 use App\Services\PengelolaBatch;
 use App\Services\PenghitungSkor;
@@ -40,8 +42,8 @@ Artisan::command('sipermon:unggah {berkas} {kode} {--modul= : Kosongkan untuk de
     }
     $oleh = $this->option('oleh')
         ? User::where('username_nip', $this->option('oleh'))->firstOrFail()
-        : User::where('role', 'super_admin')->orderBy('id')->firstOrFail();
-    $periode = Period::kode($kode) ?? app(LayananPeriode::class)->buka($kode, $oleh);
+        : User::where('role', 'admin')->orderBy('id')->firstOrFail();
+    $periode = Period::kode($kode) ?? app(LayananPeriode::class)->buka($kode, User::where('role', 'super_admin')->orderBy('id')->firstOrFail());
     $pengelola = app(PengelolaBatch::class);
 
     $batch = $pengelola->unggah(new UploadedFile($berkas, basename($berkas), null, null, true), $periode, $this->option('modul') ? Modul::from($this->option('modul')) : null, $oleh);
@@ -63,13 +65,21 @@ Artisan::command('sipermon:unggah {berkas} {kode} {--modul= : Kosongkan untuk de
     return 0;
 })->purpose('Unggah dan (opsional) commit berkas rekap ACMT');
 
-// Hari kerja tanpa absensi menjadi alpa setelah harinya lewat, jadi skor periode terbuka
-// dihitung ulang tiap hari pukul 00.15 WIB.
-Schedule::call(function () {
-    foreach (Period::query()->terbuka()->get() as $periode) {
-        app(PenghitungSkor::class)->hitung($periode);
-    }
-})->dailyAt('00:15')->timezone('Asia/Jakarta')->name('hitung-ulang-absensi')->withoutOverlapping();
+/*
+ * Catat alpa untuk satu tanggal (bawaan hari ini WIB), misalnya setelah scheduler tidak berjalan.
+ *   php artisan sipermon:alpa 2026-11-23
+ */
+Artisan::command('sipermon:alpa {tanggal? : Tanggal Y-m-d, bawaan hari ini}', function (?string $tanggal = null) {
+    (new MarkAbsentJob($tanggal))->handle(app(LayananAbsensi::class));
+    $this->info('Alpa dicatat untuk '.($tanggal ?? LayananAbsensi::hariIni()->toDateString()).'.');
+})->purpose('Catat alpa untuk akun yang belum absen pada satu tanggal');
+
+// Catat alpa untuk Biller dan Koordinator yang tidak absen, tiap hari pukul 23.59 WIB (PRD 4).
+Schedule::job(new MarkAbsentJob)
+    ->dailyAt('23:59')
+    ->timezone('Asia/Jakarta')
+    ->name('mark-absent')
+    ->withoutOverlapping();
 
 // Hapus staging lama tiap hari pukul 02.00 WIB.
 Schedule::job(new PurgeStagingJob)

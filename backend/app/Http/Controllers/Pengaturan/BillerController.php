@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Pengaturan;
 use App\Http\Controllers\Controller;
 use App\Models\Biller;
 use App\Models\BillerAlias;
+use App\Models\Period;
 use App\Services\Audit;
 use App\Services\LayananPemetaan;
 use Illuminate\Http\RedirectResponse;
@@ -22,7 +23,7 @@ class BillerController extends Controller
     {
         $q = $request->string('q')->toString();
 
-        return Inertia::render('Pengaturan/Billers/Index', [
+        return Inertia::render('SuperAdmin/MasterBiller', [
             'billers' => Biller::query()
                 ->with(['aliases' => fn ($a) => $a->orderBy('login_acmt'), 'user:id,biller_id,username_nip'])
                 ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('nama', 'like', "%{$q}%")
@@ -44,6 +45,12 @@ class BillerController extends Controller
                     ]),
                 ]),
             'filters' => (object) $request->only(['q']),
+            'statistik' => [
+                'biller' => Biller::query()->count(),
+                'aktif' => Biller::query()->aktif()->count(),
+                'alias' => BillerAlias::query()->count(),
+                'belum' => ($p = Period::bawaan()) ? $this->pemetaan->belumTerpetakan($p)->count() : 0,
+            ],
         ]);
     }
 
@@ -51,7 +58,7 @@ class BillerController extends Controller
     {
         $biller = Biller::create($this->validasi($request));
         $this->pemetaan->isiBiller($biller->login_acmt, $biller->id);
-        Audit::catat('buat_biller', $biller, null, $biller->only(['nama', 'login_acmt', 'kode_petugas_acmt']));
+        Audit::catat(Audit::CREATE_BILLER, $biller, null, $biller->only(['nama', 'login_acmt', 'kode_petugas_acmt']));
 
         return back()->with('success', "Biller {$biller->nama} ditambahkan.");
     }
@@ -64,8 +71,11 @@ class BillerController extends Controller
         if ($sebelum['login_acmt'] !== $biller->login_acmt) {
             $this->pemetaan->isiBiller($sebelum['login_acmt'], null);
             $this->pemetaan->isiBiller($biller->login_acmt, $biller->id);
+        } elseif ($sebelum['kode_petugas_acmt'] !== $biller->kode_petugas_acmt) {
+            // Kode petugas menentukan pemilik KODE RBM di Baca Ulang.
+            $this->pemetaan->isiBiller($biller->login_acmt, $biller->id);
         }
-        Audit::catat('ubah_biller', $biller, $sebelum, $biller->only(array_keys($sebelum)));
+        Audit::catat(Audit::UPDATE_BILLER, $biller, $sebelum, $biller->only(array_keys($sebelum)));
 
         return back()->with('success', "Biller {$biller->nama} diperbarui.");
     }
@@ -77,7 +87,7 @@ class BillerController extends Controller
         }
         $sebelum = $biller->only(['nama', 'login_acmt', 'kode_petugas_acmt']);
         $biller->delete();
-        Audit::catat('hapus_biller', 'Biller', $sebelum, null);
+        Audit::catat(Audit::DELETE_BILLER, 'Biller', $sebelum, null);
 
         return back()->with('success', 'Biller dihapus.');
     }
@@ -87,7 +97,7 @@ class BillerController extends Controller
         $sebelum = $alias->only(['login_acmt', 'biller_id']);
         $alias->delete();
         $this->pemetaan->isiBiller($sebelum['login_acmt'], null);
-        Audit::catat('hapus_alias', 'BillerAlias', $sebelum, null);
+        Audit::catat(Audit::DELETE_ALIAS, 'BillerAlias', $sebelum, null);
 
         return back()->with('success', "Alias {$sebelum['login_acmt']} dihapus.");
     }

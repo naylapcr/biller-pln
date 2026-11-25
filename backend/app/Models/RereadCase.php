@@ -11,7 +11,7 @@ class RereadCase extends Model
 {
     protected $fillable = [
         'period_id', 'biller_id', 'petugas_login', 'idpel', 'tarif', 'daya_va', 'kode_rbm', 'hari_baca', 'tgl_baca',
-        'stan_awal', 'pemkwh_awal', 'tgl_baca_bu', 'stan_bu', 'pemkwh_bu', 'status_bu', 'batas_kwh', 'hasil', 'batch_id',
+        'stan_awal', 'pemkwh_awal', 'tgl_baca_bu', 'stan_bu', 'pemkwh_bu', 'status_bu', 'batas_kwh', 'sisipan', 'hasil', 'batch_id',
     ];
 
     protected function casts(): array
@@ -26,6 +26,7 @@ class RereadCase extends Model
             'stan_bu' => 'float',
             'pemkwh_bu' => 'float',
             'batas_kwh' => 'float',
+            'sisipan' => 'boolean',
         ];
     }
 

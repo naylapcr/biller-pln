@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Services\LayananAbsensi;
 use App\Services\LayananPeriode;
 use App\Services\PengelolaBatch;
-use App\Services\PenghitungSkor;
 use Database\Seeders\Support\ContohBerkasAcmt;
 use Illuminate\Database\Seeder;
 use Illuminate\Http\UploadedFile;
@@ -47,7 +46,7 @@ class DatabaseSeeder extends Seeder
         $super = User::updateOrCreate(['username_nip' => 'superadmin'], [
             'nama' => 'Super Admin SIPERMON', 'password' => $sandi, 'role' => Role::SuperAdmin, 'is_active' => true,
         ]);
-        User::updateOrCreate(['username_nip' => 'koordinator'], [
+        $koordinator = User::updateOrCreate(['username_nip' => 'koordinator'], [
             'nama' => 'Koordinator Admin ULP Kota Barat', 'password' => $sandi, 'role' => Role::Admin, 'is_active' => true,
         ]);
 
@@ -66,51 +65,55 @@ class DatabaseSeeder extends Seeder
         $periode = Period::kode('202611') ?? app(LayananPeriode::class)->buka('202611', $super);
 
         if (filter_var(env('SIPERMON_DEMO', true), FILTER_VALIDATE_BOOL) && ! $periode->batches()->exists()) {
-            $this->dataDemo($periode, $super);
-            $this->absensiDemo($periode);
+            $this->dataDemo($periode, $koordinator); // unggah dan commit khusus Koordinator
+            $this->absensiDemo();
         }
     }
 
     /**
-     * Absensi demo dari awal rentang periode sampai kemarin: sebagian besar hadir, beberapa
-     * izin/sakit, dan beberapa hari sengaja kosong (menjadi alpa).
+     * Absensi demo Biller dan Koordinator dari awal bulan ini sampai kemarin (hari kerja saja):
+     * sebagian besar hadir, beberapa izin/sakit, dan beberapa alpa dari sistem.
      */
-    private function absensiDemo(Period $periode): void
+    private function absensiDemo(): void
     {
         mt_srand(17);
-        $kerja = app(LayananAbsensi::class)->hariKerja($periode, null, LayananAbsensi::hariIni()->subDay());
+        $hariIni = LayananAbsensi::hariIni();
         $baris = [];
-        foreach (Biller::query()->with('user:id,biller_id')->get() as $b) {
-            foreach ($kerja as $tanggal) {
+        $orang = User::query()->whereIn('role', [Role::Biller->value, Role::Admin->value])->pluck('id');
+        for ($t = $hariIni->startOfMonth(); $t->lessThan($hariIni); $t = $t->addDay()) {
+            if (! LayananAbsensi::hariKerja($t)) {
+                continue;
+            }
+            foreach ($orang as $id) {
                 $acak = mt_rand(1, 100);
-                if ($acak <= 3) {
-                    continue; // tidak absen → alpa
-                }
                 $status = match (true) {
+                    $acak <= 3 => StatusAbsensi::Alpa,
                     $acak <= 6 => StatusAbsensi::Izin,
                     $acak <= 9 => StatusAbsensi::Sakit,
                     default => StatusAbsensi::Hadir,
                 };
+                $jam = $t->setTime(7, mt_rand(0, 59));
                 $baris[] = [
-                    'biller_id' => $b->id,
-                    'tanggal' => $tanggal,
+                    'user_id' => $id,
+                    'tanggal' => $t->toDateString(),
                     'status' => $status->value,
+                    'absen_at' => $status === StatusAbsensi::Alpa ? null : $jam->toDateTimeString(),
+                    'lat' => $status === StatusAbsensi::Hadir ? 0.5 + mt_rand(0, 9999) / 100000 : null,
+                    'lng' => $status === StatusAbsensi::Hadir ? 101.4 + mt_rand(0, 9999) / 100000 : null,
                     'keterangan' => match ($status) {
                         StatusAbsensi::Izin => 'Keperluan keluarga',
                         StatusAbsensi::Sakit => 'Demam',
                         default => null,
                     },
-                    'sumber' => 'biller',
-                    'dicatat_oleh' => $b->user?->id,
-                    'created_at' => $tanggal.' 07:'.str_pad((string) mt_rand(0, 59), 2, '0', STR_PAD_LEFT).':00',
-                    'updated_at' => $tanggal.' 07:30:00',
+                    'sumber' => $status === StatusAbsensi::Alpa ? 'sistem' : 'mandiri',
+                    'created_at' => $jam->toDateTimeString(),
+                    'updated_at' => $jam->toDateTimeString(),
                 ];
             }
         }
         foreach (array_chunk($baris, 500) as $potongan) {
             Attendance::insert($potongan);
         }
-        app(PenghitungSkor::class)->hitung($periode);
     }
 
     /** Unggah dan commit berkas contoh sintetis lewat jalur yang sama dengan unggahan sungguhan. */

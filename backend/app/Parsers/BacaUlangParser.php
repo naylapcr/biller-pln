@@ -79,7 +79,7 @@ class BacaUlangParser extends ParserModul
                 $hasil->error($nomor, 'PERIODE_MISMATCH', "BLTH {$data['blth']} berbeda dari periode {$ctx->periode}.");
             }
 
-            $nilai = PenilaiBacaUlang::nilai($data['status_bu'], $data['stan_awal'], $data['stan_bu'], $tglBaca, $tglBu, $data['daya_va']);
+            $nilai = PenilaiBacaUlang::nilai($data['status_bu'], $data['stan_awal'], $data['stan_bu'], $tglBaca, $tglBu, $data['daya_va'], $ctx->toleransiKwh);
             $data['hasil'] = $nilai['hasil']->value;
             $data['batas_kwh'] = $nilai['batas_kwh'];
 
@@ -93,7 +93,7 @@ class BacaUlangParser extends ParserModul
                 // Pemilik KODE RBM (dari kode petugas di dalamnya) berbeda dari PETUGAS di baris ini.
                 $pemilik = $ctx->petugas->loginDariKode(substr($kodeRbm, 3, 3));
                 if ($pemilik !== null && $ctx->petugas->billerId($pemilik) !== $ctx->petugas->billerId($data['petugas_login'])) {
-                    $hasil->warning($nomor, 'RBM_TIDAK_COCOK', "KODE RBM {$kodeRbm} milik {$pemilik}, tetapi PETUGAS {$data['petugas_login']}. Kesalahan ditanggung PETUGAS.");
+                    $hasil->warning($nomor, 'RBM_TIDAK_COCOK', "KODE RBM {$kodeRbm} milik {$pemilik}, tetapi PETUGAS {$data['petugas_login']}. Kasus dibebankan ke pemilik KODE RBM.");
                 }
             }
 

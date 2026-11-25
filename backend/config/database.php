@@ -17,7 +17,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'pgsql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -96,7 +96,9 @@ return [
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
-            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Supabase: koneksi wajib SSL (PRD 7). Sesi memakai WIB agar timestamptz terbaca sebagai WIB.
+            'sslmode' => env('DB_SSLMODE', 'require'),
+            'timezone' => env('DB_TIMEZONE', 'Asia/Jakarta'),
         ],
 
         'sqlsrv' => [

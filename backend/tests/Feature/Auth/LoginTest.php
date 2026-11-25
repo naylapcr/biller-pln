@@ -28,20 +28,23 @@ test('tiap peran diarahkan ke halaman yang benar setelah login dengan username_n
 
     $this->assertAuthenticatedAs($user);
     expect($user->fresh()->last_login_at)->not->toBeNull()
-        ->and(AuditLog::where('aksi', 'login')->where('user_id', $user->id)->exists())->toBeTrue();
+        ->and(AuditLog::where('aksi', 'LOGIN')->where('user_id', $user->id)->exists())->toBeTrue();
 })->with([
     'biller' => [Role::Biller, '/saya/skor'],
     'koordinator admin' => [Role::Admin, '/dashboard'],
     'super admin' => [Role::SuperAdmin, '/dashboard'],
 ]);
 
-test('kata sandi salah ditolak dengan pesan Indonesia', function () {
+test('kata sandi salah ditolak dengan sisa percobaan', function () {
     $user = User::factory()->create();
 
     $this->post('/login', ['login' => $user->username_nip, 'password' => 'salah'])
-        ->assertSessionHasErrors(['login' => 'Username/NIP atau kata sandi tidak sesuai.']);
+        ->assertSessionHasErrors(['login' => 'NIP atau kata sandi tidak cocok. Sisa percobaan: 4/5']);
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'salah'])
+        ->assertSessionHasErrors(['login' => 'NIP atau kata sandi tidak cocok. Sisa percobaan: 3/5']);
 
     $this->assertGuest();
+    expect($user->fresh()->gagal_login)->toBe(2);
 });
 
 test('akun nonaktif tidak bisa masuk', function () {
@@ -53,18 +56,35 @@ test('akun nonaktif tidak bisa masuk', function () {
     $this->assertGuest();
 });
 
-test('login dibatasi 5 percobaan per menit per username dan IP', function () {
+test('login keenam setelah 5 kali gagal ditolak walaupun kata sandi benar, sampai dibuka Super Admin', function () {
     $user = User::factory()->create();
-    RateLimiter::clear(strtolower($user->username_nip).'|127.0.0.1');
 
     foreach (range(1, 5) as $_) {
         $this->post('/login', ['login' => $user->username_nip, 'password' => 'salah']);
     }
+    expect($user->fresh()->terkunci())->toBeTrue();
+    RateLimiter::clear(strtolower($user->username_nip).'|127.0.0.1');
 
     $this->post('/login', ['login' => $user->username_nip, 'password' => 'password'])
         ->assertSessionHasErrors('login');
-    expect(session('errors')->first('login'))->toContain('Terlalu banyak percobaan');
+    expect(session('errors')->first('login'))->toContain('Akun terkunci');
     $this->assertGuest();
+
+    $this->actingAs(superAdmin())->post("/pengaturan/users/{$user->id}/unlock")->assertSessionHas('success');
+    expect($user->fresh())->terkunci()->toBeFalse()->gagal_login->toBe(0)
+        ->and(AuditLog::where('aksi', 'UNLOCK_USER')->exists())->toBeTrue();
+
+    auth()->logout();
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'password'])->assertRedirect('/dashboard');
+});
+
+test('login berhasil mengosongkan hitungan gagal', function () {
+    $user = User::factory()->create();
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'salah']);
+
+    $this->post('/login', ['login' => $user->username_nip, 'password' => 'password']);
+
+    expect($user->fresh()->gagal_login)->toBe(0);
 });
 
 test('pengguna yang sudah masuk diarahkan dari /login ke beranda perannya', function () {

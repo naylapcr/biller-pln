@@ -10,6 +10,7 @@ enum HasilBacaUlang: string
 
     case SalahTurun = 'salah_turun';
     case SalahLebih = 'salah_lebih';
+    case Sama = 'sama';
     case Wajar = 'wajar';
     case TidakDinilai = 'tidak_dinilai';
 
@@ -18,6 +19,7 @@ enum HasilBacaUlang: string
         return match ($this) {
             self::SalahTurun => 'Stan BU lebih kecil',
             self::SalahLebih => 'Kenaikan melebihi batas',
+            self::Sama => 'Stan sama',
             self::Wajar => 'Wajar',
             self::TidakDinilai => 'Tidak dinilai',
         };

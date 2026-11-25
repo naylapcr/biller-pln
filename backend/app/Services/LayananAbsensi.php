@@ -2,204 +2,248 @@
 
 namespace App\Services;
 
+use App\Enums\Role;
 use App\Enums\StatusAbsensi;
 use App\Models\Attendance;
-use App\Models\Biller;
-use App\Models\Period;
 use App\Models\User;
 use Carbon\CarbonImmutable;
-use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Absensi harian biller.
- *  - Biller mengisi sendiri untuk hari ini: hadir, izin, atau sakit.
- *  - Hari kerja (parameter absensi_hari_kerja, di luar absensi_hari_libur) yang sudah lewat
- *    tanpa absensi dihitung alpa. Hari ini belum dihitung alpa sampai harinya berakhir.
- *  - Koordinator Admin bisa mengisi atau mengoreksi absensi biller mana pun, termasuk alpa.
- *  - Denda = jumlah alpa × denda_alpa_per_hari (parameter periode).
- * Rentang tanggal yang dinilai per periode = absensi_mulai … absensi_selesai (bawaan bulan BLTH).
+ * Absensi mandiri (PRD 4). Tidak lewat unggahan dan tidak memengaruhi skor.
+ *  1. Absen selalu atas nama akun yang login, untuk hari ini menurut jam server (WIB).
+ *  2. Sekali sehari: hadir, izin, atau sakit. Absen kedua di hari yang sama ditolak 409.
+ *  3. Izin dan sakit wajib disertai keterangan.
+ *  4. Saat hadir, lokasi browser disimpan bila diizinkan; bila tidak, lokasi kosong.
+ *  5. MarkAbsentJob mencatat alpa pukul 23.59 WIB untuk Biller dan Koordinator aktif yang belum absen.
+ *  6. Koreksi hanya oleh Super Admin dengan alasan wajib, tercatat di audit_logs.
  */
 class LayananAbsensi
 {
-    public function __construct(private readonly ParameterSkor $parameter) {}
-
+    /** Tanggal hari ini dalam WIB (timezone aplikasi), bukan tanggal UTC. */
     public static function hariIni(): CarbonImmutable
     {
         return CarbonImmutable::now(config('app.timezone'))->startOfDay();
     }
 
-    /** @throws ValidationException */
-    public function absenSendiri(User $user, StatusAbsensi $status, ?string $keterangan): Attendance
+    public static function hariKerja(CarbonImmutable $tanggal): bool
     {
-        $biller = $user->biller ?? throw ValidationException::withMessages(['status' => 'Akun ini belum ditautkan ke data biller.']);
+        return in_array($tanggal->isoWeekday(), (array) config('sipermon.absensi.hari_kerja'), true)
+            && ! in_array($tanggal->toDateString(), (array) config('sipermon.absensi.hari_libur'), true);
+    }
+
+    public function hariIniMilik(User $user): ?Attendance
+    {
+        return Attendance::query()->where('user_id', $user->id)->whereDate('tanggal', self::hariIni()->toDateString())->first();
+    }
+
+    /** @throws ValidationException */
+    public function absenSendiri(User $user, StatusAbsensi $status, ?string $keterangan, ?float $lat = null, ?float $lng = null): Attendance
+    {
+        abort_unless($user->wajibAbsen(), 403, 'Super Admin tidak wajib absen.');
         if ($status === StatusAbsensi::Alpa) {
             throw ValidationException::withMessages(['status' => 'Pilih hadir, izin, atau sakit.']);
         }
         if ($status !== StatusAbsensi::Hadir && blank($keterangan)) {
             throw ValidationException::withMessages(['keterangan' => 'Tulis keterangan untuk izin atau sakit.']);
         }
+        abort_if($this->hariIniMilik($user) !== null, 409, 'Anda sudah absen hari ini. Absen hanya sekali sehari.');
 
-        $hariIni = self::hariIni();
-        $ada = Attendance::query()->where('biller_id', $biller->id)->whereDate('tanggal', $hariIni->toDateString())->first();
-        if ($ada && $ada->sumber !== 'biller') {
-            throw ValidationException::withMessages(['status' => 'Absensi hari ini sudah diisi Koordinator Admin. Hubungi koordinator bila perlu diubah.']);
-        }
-
-        $absen = $this->simpan($biller, $hariIni, $status, $keterangan, 'biller', $user);
-        Audit::catat('absen', $absen, $ada ? ['status' => $ada->status->value] : null, ['tanggal' => $hariIni->toDateString(), 'status' => $status->value], $user->id);
+        $hadir = $status === StatusAbsensi::Hadir;
+        $absen = Attendance::create([
+            'user_id' => $user->id,
+            'tanggal' => self::hariIni()->toDateString(),
+            'status' => $status,
+            'absen_at' => now(),
+            'lat' => $hadir ? $lat : null,
+            'lng' => $hadir ? $lng : null,
+            'keterangan' => $hadir ? (blank($keterangan) ? null : $keterangan) : $keterangan,
+            'sumber' => 'mandiri',
+        ]);
+        Audit::catat(Audit::ATTEND, $absen, null, ['tanggal' => $absen->tanggal->toDateString(), 'status' => $status->value], $user->id);
 
         return $absen;
     }
 
     /**
-     * Koreksi oleh Koordinator Admin. $status null = hapus (kembali "belum absen").
+     * Koreksi Super Admin: ubah status (atau isi bila belum ada) dengan alasan wajib.
      *
      * @throws ValidationException
      */
-    public function atur(User $oleh, Biller $biller, CarbonImmutable $tanggal, ?StatusAbsensi $status, ?string $keterangan): void
+    public function koreksi(User $oleh, User $target, CarbonImmutable $tanggal, StatusAbsensi $status, string $alasan, ?string $keterangan = null): Attendance
     {
+        abort_unless($oleh->isSuperAdmin(), 403, 'Hanya Super Admin yang bisa mengoreksi absensi.');
+        if (! $target->wajibAbsen()) {
+            throw ValidationException::withMessages(['user_id' => 'Absensi hanya untuk Biller dan Koordinator Admin.']);
+        }
         if ($tanggal->greaterThan(self::hariIni())) {
-            throw ValidationException::withMessages(['tanggal' => 'Absensi tanggal yang akan datang belum bisa diisi.']);
+            throw ValidationException::withMessages(['tanggal' => 'Absensi tanggal yang akan datang belum bisa dikoreksi.']);
         }
-        $periodeTutup = Period::query()->where('status', 'ditutup')
-            ->whereDate('absensi_mulai', '<=', $tanggal->toDateString())->whereDate('absensi_selesai', '>=', $tanggal->toDateString())->first();
-        if ($periodeTutup) {
-            throw ValidationException::withMessages(['tanggal' => "Tanggal ini termasuk periode {$periodeTutup->kode} yang sudah ditutup."]);
+        if (blank($alasan)) {
+            throw ValidationException::withMessages(['alasan_diubah' => 'Alasan koreksi wajib diisi.']);
         }
 
-        $ada = Attendance::query()->where('biller_id', $biller->id)->whereDate('tanggal', $tanggal->toDateString())->first();
-        $sebelum = $ada ? ['status' => $ada->status->value, 'sumber' => $ada->sumber] : null;
+        $absen = Attendance::query()->where('user_id', $target->id)->whereDate('tanggal', $tanggal->toDateString())->first()
+            ?? new Attendance(['user_id' => $target->id, 'tanggal' => $tanggal->toDateString(), 'sumber' => 'sistem']);
+        $sebelum = $absen->exists ? ['status' => $absen->status->value, 'keterangan' => $absen->keterangan] : ['status' => 'belum_absen'];
 
-        if ($status === null) {
-            $ada?->delete();
-            $this->hitungUlang($tanggal);
-        } else {
-            $this->simpan($biller, $tanggal, $status, $keterangan, 'admin', $oleh);
-        }
+        $absen->fill([
+            'status' => $status,
+            'keterangan' => $keterangan ?? $absen->keterangan,
+            'dikoreksi_oleh' => $oleh->id,
+            'alasan_diubah' => $alasan,
+        ])->save();
 
-        Audit::catat('koreksi_absensi', $biller, $sebelum, ['tanggal' => $tanggal->toDateString(), 'status' => $status?->value, 'keterangan' => $keterangan], $oleh->id);
-    }
-
-    private function simpan(Biller $biller, CarbonImmutable $tanggal, StatusAbsensi $status, ?string $keterangan, string $sumber, User $oleh): Attendance
-    {
-        $absen = Attendance::query()->where('biller_id', $biller->id)->whereDate('tanggal', $tanggal->toDateString())->first()
-            ?? new Attendance(['biller_id' => $biller->id, 'tanggal' => $tanggal->toDateString()]);
-        $absen->fill(['status' => $status, 'keterangan' => $keterangan, 'sumber' => $sumber, 'dicatat_oleh' => $oleh->id])->save();
-
-        $this->hitungUlang($tanggal);
+        Audit::catat(Audit::CORRECT_ATT, $absen, $sebelum, [
+            'user' => $target->username_nip, 'tanggal' => $tanggal->toDateString(), 'status' => $status->value, 'alasan' => $alasan,
+        ], $oleh->id);
 
         return $absen;
     }
 
-    private function hitungUlang(CarbonImmutable $tanggal): void
+    /**
+     * Catat alpa (sumber = sistem) untuk Biller dan Koordinator aktif yang belum absen pada hari kerja ini.
+     *
+     * @return int jumlah akun yang dicatat alpa
+     */
+    public function tandaiAlpa(CarbonImmutable $tanggal): int
     {
-        if ($periode = Period::untukTanggal($tanggal)) {
-            app(PenghitungSkor::class)->hitung($periode);
+        if (! self::hariKerja($tanggal)) {
+            return 0;
         }
+        $sudah = Attendance::query()->whereDate('tanggal', $tanggal->toDateString())->pluck('user_id');
+        $belum = User::query()->where('is_active', true)
+            ->whereIn('role', [Role::Biller->value, Role::Admin->value])
+            ->whereNotIn('id', $sudah)->pluck('id');
+
+        $sekarang = now();
+        foreach ($belum->chunk(200) as $ids) {
+            Attendance::insert($ids->map(fn ($id) => [
+                'user_id' => $id,
+                'tanggal' => $tanggal->toDateString(),
+                'status' => StatusAbsensi::Alpa->value,
+                'sumber' => 'sistem',
+                'created_at' => $sekarang,
+                'updated_at' => $sekarang,
+            ])->all());
+        }
+
+        return $belum->count();
     }
 
     /**
-     * Tanggal kerja di rentang absensi periode (sampai batas $sampai bila diberikan).
+     * Pantauan harian. Koordinator melihat semua biller; Super Admin juga melihat Koordinator.
      *
-     * @return list<string> Y-m-d
+     * @param  list<Role>  $peran
+     * @return Collection<int, array<string, mixed>>
      */
-    public function hariKerja(Period $periode, ?array $aturan = null, ?CarbonImmutable $sampai = null): array
+    public function harian(CarbonImmutable $tanggal, array $peran): Collection
     {
-        $aturan ??= $this->parameter->untuk($periode);
-        if (! $periode->absensi_mulai || ! $periode->absensi_selesai) {
-            return [];
-        }
-        $kerja = array_map('intval', (array) ($aturan['absensi_hari_kerja'] ?? []));
-        $libur = array_flip((array) ($aturan['absensi_hari_libur'] ?? []));
-        $akhir = $sampai ? $periode->absensi_selesai->min($sampai) : $periode->absensi_selesai;
+        $catatan = Attendance::query()->whereDate('tanggal', $tanggal->toDateString())->get()->keyBy('user_id');
 
-        $hasil = [];
-        if ($akhir->lessThan($periode->absensi_mulai)) {
-            return $hasil;
-        }
-        foreach (CarbonPeriod::create($periode->absensi_mulai, $akhir) as $hari) {
-            if (in_array($hari->isoWeekday(), $kerja, true) && ! isset($libur[$hari->toDateString()])) {
-                $hasil[] = $hari->toDateString();
-            }
-        }
+        return $this->orang($peran)->map(function (User $u) use ($catatan) {
+            $a = $catatan->get($u->id);
 
-        return $hasil;
-    }
-
-    /**
-     * Rekap per biller: jumlah hadir, izin, sakit, dan alpa (dicatat + hari kerja lewat tanpa absensi).
-     *
-     * @param  iterable<int>|null  $billerIds  null = semua biller aktif
-     * @return Collection<int, array{hadir: int, izin: int, sakit: int, alpa: int, alpa_tanpa_absen: int, hari_kerja: int}>
-     */
-    public function rekap(Period $periode, ?iterable $billerIds = null, ?array $aturan = null): Collection
-    {
-        $aturan ??= $this->parameter->untuk($periode);
-        // Hari kerja yang sudah lewat (hari ini belum dihitung alpa).
-        $lewat = $this->hariKerja($periode, $aturan, self::hariIni()->subDay());
-        $billerIds = collect($billerIds ?? Biller::query()->aktif()->pluck('id'));
-
-        $catatan = Attendance::query()
-            ->whereIn('biller_id', $billerIds)
-            ->whereDate('tanggal', '>=', $periode->absensi_mulai?->toDateString())
-            ->whereDate('tanggal', '<=', $periode->absensi_selesai?->toDateString())
-            ->get(['biller_id', 'tanggal', 'status'])
-            ->groupBy('biller_id');
-
-        return $billerIds->mapWithKeys(function ($id) use ($catatan, $lewat) {
-            $milik = $catatan->get($id) ?? collect();
-            $tercatat = $milik->map(fn (Attendance $a) => $a->tanggal->toDateString())->flip();
-            $tanpaAbsen = count(array_filter($lewat, fn ($t) => ! isset($tercatat[$t])));
-            $hitung = fn (StatusAbsensi $s) => $milik->where('status', $s)->count();
-
-            return [$id => [
-                'hadir' => $hitung(StatusAbsensi::Hadir),
-                'izin' => $hitung(StatusAbsensi::Izin),
-                'sakit' => $hitung(StatusAbsensi::Sakit),
-                'alpa' => $hitung(StatusAbsensi::Alpa) + $tanpaAbsen,
-                'alpa_tanpa_absen' => $tanpaAbsen,
-                'hari_kerja' => count($lewat),
-            ]];
-        });
-    }
-
-    /**
-     * Status setiap tanggal di rentang absensi untuk satu biller.
-     *
-     * @return list<array{tanggal: string, status: string, keterangan: string|null, sumber: string|null}>
-     */
-    public function harian(Period $periode, Biller $biller): array
-    {
-        $aturan = $this->parameter->untuk($periode);
-        if (! $periode->absensi_mulai || ! $periode->absensi_selesai) {
-            return [];
-        }
-        $kerja = array_flip($this->hariKerja($periode, $aturan));
-        $hariIni = self::hariIni();
-        $catatan = Attendance::query()->where('biller_id', $biller->id)
-            ->whereDate('tanggal', '>=', $periode->absensi_mulai->toDateString())
-            ->whereDate('tanggal', '<=', $periode->absensi_selesai->toDateString())
-            ->get()->keyBy(fn (Attendance $a) => $a->tanggal->toDateString());
-
-        $hasil = [];
-        foreach (CarbonPeriod::create($periode->absensi_mulai, $periode->absensi_selesai) as $hari) {
-            $t = $hari->toDateString();
-            $a = $catatan->get($t);
-            $hasil[] = [
-                'tanggal' => $t,
-                'status' => match (true) {
-                    $a !== null => $a->status->value,
-                    ! isset($kerja[$t]) => 'libur',
-                    $hari->lessThan($hariIni) => 'alpa',
-                    default => 'belum',
-                },
+            return $this->orangInfo($u) + [
+                'attendance_id' => $a?->id,
+                'status' => $a?->status->value ?? 'belum',
+                'absen_at' => $a?->absen_at?->toIso8601String(),
+                'lat' => $a?->lat,
+                'lng' => $a?->lng,
                 'keterangan' => $a?->keterangan,
                 'sumber' => $a?->sumber,
+                'dikoreksi' => $a?->dikoreksi_oleh !== null,
             ];
-        }
+        })->values();
+    }
 
-        return $hasil;
+    /**
+     * Rekap bulanan per orang: jumlah hadir, izin, sakit, alpa, dan koreksi Super Admin.
+     *
+     * @param  list<Role>  $peran
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function rekapBulanan(CarbonImmutable $bulan, array $peran): Collection
+    {
+        $catatan = $this->catatanBulan($bulan)->groupBy('user_id');
+
+        return $this->orang($peran)->map(fn (User $u) => $this->orangInfo($u) + $this->hitung($catatan->get($u->id) ?? collect()))->values();
+    }
+
+    /** @return array{hadir: int, izin: int, sakit: int, alpa: int, koreksi: int} ringkasan bulan ini untuk satu akun */
+    public function ringkasan(User $user, CarbonImmutable $bulan): array
+    {
+        return $this->hitung($this->catatanBulan($bulan)->where('user_id', $user->id));
+    }
+
+    /** @return Collection<int, array<string, mixed>> riwayat absensi satu akun di bulan ini, terbaru di atas */
+    public function riwayat(User $user, CarbonImmutable $bulan): Collection
+    {
+        return $this->catatanBulan($bulan)->where('user_id', $user->id)->sortByDesc(fn (Attendance $a) => $a->tanggal)
+            ->map(fn (Attendance $a) => self::baris($a))->values();
+    }
+
+    /** @return array<string, mixed> */
+    public static function baris(Attendance $a): array
+    {
+        return [
+            'id' => $a->id,
+            'tanggal' => $a->tanggal->toDateString(),
+            'status' => $a->status->value,
+            'absen_at' => $a->absen_at?->toIso8601String(),
+            'lat' => $a->lat,
+            'lng' => $a->lng,
+            'keterangan' => $a->keterangan,
+            'sumber' => $a->sumber,
+            'dikoreksi' => $a->dikoreksi_oleh !== null,
+            'alasan_diubah' => $a->alasan_diubah,
+        ];
+    }
+
+    /** @return Collection<int, Attendance> */
+    private function catatanBulan(CarbonImmutable $bulan): Collection
+    {
+        return Attendance::query()
+            ->whereDate('tanggal', '>=', $bulan->startOfMonth()->toDateString())
+            ->whereDate('tanggal', '<=', $bulan->endOfMonth()->toDateString())
+            ->get();
+    }
+
+    /** @param  Collection<int, Attendance>  $catatan */
+    private function hitung(Collection $catatan): array
+    {
+        $n = fn (StatusAbsensi $s) => $catatan->filter(fn (Attendance $a) => $a->status === $s)->count();
+
+        return [
+            'hadir' => $n(StatusAbsensi::Hadir),
+            'izin' => $n(StatusAbsensi::Izin),
+            'sakit' => $n(StatusAbsensi::Sakit),
+            'alpa' => $n(StatusAbsensi::Alpa),
+            'koreksi' => $catatan->whereNotNull('dikoreksi_oleh')->count(),
+        ];
+    }
+
+    /** @param  list<Role>  $peran */
+    private function orang(array $peran): Collection
+    {
+        return User::query()->where('is_active', true)
+            ->whereIn('role', array_map(fn (Role $r) => $r->value, $peran))
+            ->with('biller:id,nip,nama,zona_wilayah,kode_petugas_acmt')
+            ->orderByRaw("CASE role WHEN 'admin' THEN 0 ELSE 1 END")->orderBy('nama')
+            ->get();
+    }
+
+    private function orangInfo(User $u): array
+    {
+        return [
+            'user_id' => $u->id,
+            'nama' => $u->nama,
+            'nip' => $u->biller?->nip ?? $u->username_nip,
+            'username' => $u->username_nip,
+            'peran' => $u->role->value,
+            'peran_label' => $u->role->label(),
+            'wilayah' => $u->biller?->zona_wilayah,
+        ];
     }
 }

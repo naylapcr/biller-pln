@@ -2,9 +2,11 @@
 
 namespace App\Http\Middleware;
 
-use App\Enums\StatusBatch;
+use App\Enums\Role;
+use App\Models\Biller;
 use App\Models\Period;
-use App\Models\UploadBatch;
+use App\Services\LayananAbsensi;
+use App\Services\LayananPemetaan;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -19,7 +21,7 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
-        $user = $request->user()?->loadMissing('biller:id,nama,login_acmt,kode_petugas_acmt');
+        $user = $request->user()?->loadMissing('biller:id,nama,nip,login_acmt,kode_petugas_acmt,zona_wilayah');
 
         return [
             ...parent::share($request),
@@ -33,20 +35,40 @@ class HandleInertiaRequests extends Middleware
                     'role_label' => $user->role->label(),
                     'biller' => $user->biller ? [
                         'id' => $user->biller->id,
+                        'nip' => $user->biller->nip,
                         'login_acmt' => $user->biller->login_acmt,
                         'kode_petugas' => $user->biller->kode_petugas_acmt,
+                        'zona_wilayah' => $user->biller->zona_wilayah,
                     ] : null,
                 ] : null,
             ],
-            // Angka kecil di menu: batch yang menunggu commit.
+            // Kartu status sidebar (PRD 10.1): BLTH aktif + satu baris info khas peran.
+            'kartuStatus' => fn () => $user ? $this->kartuStatus($user) : null,
+            // Badge menu Pemetaan Petugas = login ACMT yang belum terpetakan di periode terbuka.
             'navBadges' => fn () => $user?->isAdmin() ? (object) [
-                'unggah' => UploadBatch::query()->where('status', StatusBatch::SiapCommit->value)
-                    ->whereIn('period_id', Period::query()->terbuka()->select('id'))->count(),
+                'pemetaan' => ($p = Period::query()->terbuka()->orderByDesc('kode')->first())
+                    ? app(LayananPemetaan::class)->belumTerpetakan($p)->count() : 0,
             ] : (object) [],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+        ];
+    }
+
+    private function kartuStatus($user): array
+    {
+        $periode = Period::query()->terbuka()->orderByDesc('kode')->first() ?? Period::query()->orderByDesc('kode')->first();
+        $absen = $user->wajibAbsen() ? app(LayananAbsensi::class)->hariIniMilik($user) : null;
+
+        return [
+            'periode' => $periode ? ['kode' => $periode->kode, 'terbuka' => $periode->terbuka()] : null,
+            'absensi' => $user->wajibAbsen() ? [
+                'status' => $absen?->status->value ?? 'belum',
+                'jam' => $absen?->absen_at?->toIso8601String(),
+            ] : null,
+            'wilayah' => $user->biller?->zona_wilayah,
+            'biller_aktif' => $user->role === Role::Admin ? Biller::query()->aktif()->count() : null,
         ];
     }
 }

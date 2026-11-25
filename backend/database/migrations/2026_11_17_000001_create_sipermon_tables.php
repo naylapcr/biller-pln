@@ -19,16 +19,16 @@ return new class extends Migration
             $table->foreignId('biller_id')->constrained('billers')->cascadeOnDelete();
             $table->string('login_acmt', 60)->unique(); // huruf kecil
             $table->date('berlaku_mulai')->nullable();
-            $table->timestamps();
+            $table->timestampsTz();
         });
 
         Schema::create('periods', function (Blueprint $table) {
             $table->id();
             $table->char('kode', 6)->unique(); // BLTH, contoh 202611
             $table->string('status', 10)->default('terbuka');
-            $table->timestamp('ditutup_at')->nullable();
+            $table->timestampTz('ditutup_at')->nullable();
             $table->foreignId('ditutup_oleh')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamps();
+            $table->timestampsTz();
         });
 
         Schema::create('upload_batches', function (Blueprint $table) {
@@ -44,9 +44,9 @@ return new class extends Migration
             $table->string('status', 20)->default('diproses');
             $table->json('ringkasan')->nullable();
             $table->foreignId('diunggah_oleh')->constrained('users')->restrictOnDelete();
-            $table->timestamp('committed_at')->nullable();
+            $table->timestampTz('committed_at')->nullable();
             $table->uuid('superseded_by')->nullable()->index();
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->index(['period_id', 'modul', 'status']);
         });
@@ -60,7 +60,7 @@ return new class extends Migration
             $table->string('tingkat', 10); // error, warning, info
             $table->text('pesan');
             $table->json('nilai')->nullable();
-            $table->timestamp('created_at')->nullable();
+            $table->timestampTz('created_at')->nullable();
 
             $table->index(['batch_id', 'tingkat']);
             $table->index(['batch_id', 'row_number']);
@@ -72,7 +72,7 @@ return new class extends Migration
             $table->string('sheet')->nullable();
             $table->unsignedInteger('row_number');
             $table->json('data');
-            $table->timestamp('created_at')->nullable();
+            $table->timestampTz('created_at')->nullable();
 
             $table->index(['batch_id', 'row_number']);
         });
@@ -90,11 +90,11 @@ return new class extends Migration
             $table->unsignedInteger('terbaca');
             $table->unsignedInteger('belum_baca');
             $table->unsignedInteger('foto_berhasil');
-            $table->timestamp('mulai_at')->nullable();
-            $table->timestamp('selesai_at')->nullable();
+            $table->timestampTz('mulai_at')->nullable();
+            $table->timestampTz('selesai_at')->nullable();
             $table->unsignedInteger('durasi_detik')->nullable();
             $table->foreignUuid('batch_id')->constrained('upload_batches')->restrictOnDelete();
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->unique(['period_id', 'jenis_meter', 'kode_rbm', 'petugas_login']);
             $table->index(['period_id', 'biller_id']);
@@ -111,17 +111,19 @@ return new class extends Migration
             $table->unsignedInteger('daya_va')->nullable();
             $table->string('kode_rbm', 20)->nullable();
             $table->char('hari_baca', 1)->nullable();
-            $table->timestamp('tgl_baca')->nullable();
+            $table->timestampTz('tgl_baca')->nullable();
             $table->decimal('stan_awal', 14, 2)->nullable();
             $table->decimal('pemkwh_awal', 14, 2)->nullable();
-            $table->timestamp('tgl_baca_bu')->nullable();
+            $table->timestampTz('tgl_baca_bu')->nullable();
             $table->decimal('stan_bu', 14, 2)->nullable();
             $table->decimal('pemkwh_bu', 14, 2)->nullable();
             $table->string('status_bu', 20)->nullable(); // SUDAH BACA / BELUM BACA
             $table->decimal('batas_kwh', 14, 2)->nullable();
-            $table->string('hasil', 20); // salah_turun, salah_lebih, wajar, tidak_dinilai
+            // Dibaca di luar jendela hari baca RBM-nya; kasus sisipan tidak memotong skor (PRD 6.2).
+            $table->boolean('sisipan')->default(false);
+            $table->string('hasil', 20); // salah_turun, salah_lebih, sama, wajar, tidak_dinilai
             $table->foreignUuid('batch_id')->constrained('upload_batches')->restrictOnDelete();
-            $table->timestamps();
+            $table->timestampsTz();
 
             // PRD menyebut IDPEL + TGLBACA, tetapi contoh berkas punya 3 pasang baris dengan IDPEL dan
             // TGLBACA sama yang berbeda TGLBACA BU, jadi TGLBACA BU ikut menjadi kunci unik.
@@ -141,7 +143,7 @@ return new class extends Migration
             $table->unsignedInteger('daya_va')->nullable();
             $table->string('kdrbm', 20)->nullable();
             $table->string('kd_kelompok', 5)->nullable();
-            $table->timestamp('tgl_baca')->nullable();
+            $table->timestampTz('tgl_baca')->nullable();
             $table->string('kd_baca', 5)->nullable();
             $table->string('segel', 30)->nullable();
             $table->string('lcd', 30)->nullable();
@@ -154,7 +156,7 @@ return new class extends Migration
             $table->boolean('koordinat_valid')->default(false);
             $table->json('raw')->nullable();
             $table->foreignUuid('batch_id')->constrained('upload_batches')->restrictOnDelete();
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->unique(['period_id', 'idpel']);
             $table->index(['period_id', 'biller_id']);
@@ -170,7 +172,7 @@ return new class extends Migration
             $table->unsignedInteger('realisasi')->default(0);
             $table->unsignedInteger('eviden')->default(0);
             $table->unsignedBigInteger('durasi_detik')->default(0);
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->unique(['biller_id', 'period_id', 'modul_type']);
         });
@@ -182,27 +184,35 @@ return new class extends Migration
             $table->string('petugas_login', 60)->nullable();
             $table->string('idpel', 12);
             $table->string('sumber', 5); // AP2T, BU
+            // Hanya penyebab = biller yang masuk rasio kesalahan; frontliner dari berkas AP2T.
+            $table->string('penyebab', 12)->default('biller'); // biller, frontliner
             $table->decimal('stan_awal', 14, 2)->nullable();
             $table->decimal('stan_benar', 14, 2)->nullable();
-            $table->string('tingkat', 20)->nullable();
-            $table->decimal('denda_poin', 10, 2)->default(0);
             $table->foreignId('reread_case_id')->nullable()->constrained('reread_cases')->cascadeOnDelete();
             $table->foreignUuid('batch_id')->constrained('upload_batches')->restrictOnDelete();
             $table->text('catatan')->nullable();
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->index(['period_id', 'biller_id', 'sumber']);
         });
 
-        Schema::create('attendance', function (Blueprint $table) {
+        // Absensi mandiri Biller dan Koordinator (PRD 4). Tidak diunggah, tidak memengaruhi skor.
+        Schema::create('attendances', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('biller_id')->constrained('billers')->cascadeOnDelete();
-            $table->date('tanggal');
+            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+            $table->date('tanggal'); // tanggal WIB
             $table->string('status', 10); // hadir, izin, sakit, alpa
-            $table->foreignUuid('batch_id')->nullable()->constrained('upload_batches')->restrictOnDelete();
-            $table->timestamps();
+            $table->timestampTz('absen_at')->nullable(); // jam server
+            $table->decimal('lat', 10, 7)->nullable();
+            $table->decimal('lng', 10, 7)->nullable();
+            $table->text('keterangan')->nullable(); // wajib untuk izin dan sakit
+            $table->string('sumber', 10)->default('mandiri'); // mandiri, sistem
+            $table->foreignId('dikoreksi_oleh')->nullable()->constrained('users')->nullOnDelete();
+            $table->text('alasan_diubah')->nullable();
+            $table->timestampsTz();
 
-            $table->unique(['biller_id', 'tanggal']);
+            $table->unique(['user_id', 'tanggal']);
+            $table->index('tanggal');
         });
 
         Schema::create('scoring_rules', function (Blueprint $table) {
@@ -211,30 +221,32 @@ return new class extends Migration
             $table->string('kunci', 40);
             $table->json('nilai')->nullable();
             $table->foreignId('diubah_oleh')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->unique(['period_id', 'kunci']);
         });
 
+        // Skor bulanan (PRD 6.1): rata-rata nilai modul (0–100) + bonus Hari J.
         Schema::create('monthly_scores', function (Blueprint $table) {
             $table->id();
             $table->foreignId('biller_id')->constrained('billers')->cascadeOnDelete();
             $table->foreignId('period_id')->constrained('periods')->cascadeOnDelete();
-            $table->decimal('poin_tugas', 12, 2)->default(0);
-            $table->json('poin_per_modul');
-            $table->decimal('poin_hari_j', 10, 2)->default(0);
-            $table->decimal('denda_bu', 10, 2)->default(0);
-            $table->decimal('denda_ap2t', 10, 2)->default(0);
-            $table->decimal('total_denda', 10, 2)->default(0);
-            $table->decimal('final_score', 12, 2)->default(0);
-            $table->unsignedInteger('stan_valid')->default(0); // pemecah seri peringkat
+            $table->json('nilai_per_modul'); // R, E, K per modul
+            $table->decimal('nilai_pasca_dasar', 10, 2)->nullable();
+            $table->decimal('plg_per_jam', 10, 2)->nullable();
+            $table->decimal('nilai_kecepatan', 10, 2)->nullable();
+            $table->decimal('rasio_bu', 6, 4)->default(0);
+            $table->decimal('rasio_ap2t', 6, 4)->default(0);
+            $table->decimal('rata_rata_modul', 10, 2)->default(0);
+            $table->decimal('bonus_hari_j', 10, 2)->default(0);
+            $table->decimal('final_score', 10, 2)->default(0);
+            $table->unsignedInteger('terbaca')->default(0); // pemecah seri peringkat
             $table->unsignedSmallInteger('peringkat')->nullable();
-            $table->string('kategori', 20)->nullable();
-            $table->json('indikator')->nullable(); // rasio kelalaian & kecepatan, tidak masuk skor
+            $table->string('kategori', 20)->nullable(); // Grade A, Perlu Evaluasi, Kritis
             $table->json('rules_snapshot');
             $table->boolean('is_final')->default(false);
-            $table->timestamp('dihitung_at')->nullable();
-            $table->timestamps();
+            $table->timestampTz('dihitung_at')->nullable();
+            $table->timestampsTz();
 
             $table->unique(['biller_id', 'period_id']);
             $table->index(['period_id', 'peringkat']);
@@ -249,7 +261,8 @@ return new class extends Migration
             $table->json('sebelum')->nullable();
             $table->json('sesudah')->nullable();
             $table->string('ip', 45)->nullable();
-            $table->timestamp('created_at')->useCurrent();
+            $table->string('user_agent', 255)->nullable();
+            $table->timestampTz('created_at')->useCurrent();
 
             $table->index(['aksi', 'created_at']);
         });
@@ -258,12 +271,16 @@ return new class extends Migration
             // Satu batch committed per (periode, modul).
             DB::statement("CREATE UNIQUE INDEX upload_batches_satu_committed ON upload_batches (period_id, modul) WHERE status = 'committed'");
 
+            // PostgreSQL membedakan huruf besar-kecil: 18111.AKMAL dan 18111.akmal harus dianggap sama.
+            DB::statement('CREATE UNIQUE INDEX billers_login_acmt_lower ON billers (lower(login_acmt))');
+            DB::statement('CREATE UNIQUE INDEX biller_aliases_login_acmt_lower ON biller_aliases (lower(login_acmt))');
+
             // Supabase: aktifkan Row Level Security tanpa kebijakan apa pun, sehingga peran anon dan
             // authenticated (kunci publik) ditolak. Backend memakai koneksi database langsung sebagai
             // pemilik tabel, yang tidak terkena RLS.
             $tabel = ['billers', 'users', 'sessions', 'biller_aliases', 'periods', 'upload_batches', 'upload_row_issues',
                 'staging_rows', 'reading_logs', 'reread_cases', 'prepaid_inspections', 'work_orders', 'corrections',
-                'attendance', 'scoring_rules', 'monthly_scores', 'audit_logs', 'cache', 'cache_locks', 'jobs',
+                'attendances', 'scoring_rules', 'monthly_scores', 'audit_logs', 'cache', 'cache_locks', 'jobs',
                 'job_batches', 'failed_jobs', 'migrations'];
             foreach ($tabel as $t) {
                 DB::statement("ALTER TABLE {$t} ENABLE ROW LEVEL SECURITY");
@@ -273,7 +290,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        foreach (['audit_logs', 'monthly_scores', 'scoring_rules', 'attendance', 'corrections', 'work_orders',
+        foreach (['audit_logs', 'monthly_scores', 'scoring_rules', 'attendances', 'corrections', 'work_orders',
             'prepaid_inspections', 'reread_cases', 'reading_logs', 'staging_rows', 'upload_row_issues',
             'upload_batches', 'periods', 'biller_aliases'] as $t) {
             Schema::dropIfExists($t);

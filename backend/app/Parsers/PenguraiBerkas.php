@@ -91,12 +91,12 @@ class PenguraiBerkas
         $urut = $posisi;
         sort($urut);
         if ($kepala['baris_header'] === null || $hilang) {
-            $hasil->error($kepala['baris_header'], 'HEADER_MISMATCH', 'Kolom wajib tidak ditemukan: '.implode(', ', $hilang ?: $parser->kolomWajib()).'.');
+            $hasil->error($kepala['baris_header'], 'MISSING_REQUIRED_COLUMN', 'Kolom wajib tidak ditemukan: '.implode(', ', $hilang ?: $parser->kolomWajib()).'.');
 
             return $hasil;
         }
         if ($posisi !== $urut) {
-            $hasil->error($kepala['baris_header'], 'HEADER_MISMATCH', 'Urutan kolom berbeda dari format ekspor ACMT.');
+            $hasil->error($kepala['baris_header'], 'MISSING_REQUIRED_COLUMN', 'Urutan kolom berbeda dari format ekspor ACMT.');
 
             return $hasil;
         }

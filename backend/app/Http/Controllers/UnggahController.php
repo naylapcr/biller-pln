@@ -6,16 +6,25 @@ use App\Enums\Modul;
 use App\Enums\StatusBatch;
 use App\Enums\TingkatIssue;
 use App\Exceptions\KonflikBatch;
+use App\Exports\TemplateAcmtExport;
 use App\Http\Controllers\Concerns\PilihPeriode;
+use App\Models\Biller;
 use App\Models\Period;
 use App\Models\UploadBatch;
 use App\Models\UploadRowIssue;
+use App\Services\Audit;
+use App\Services\PemetaanPetugas;
 use App\Services\PengelolaBatch;
+use App\Support\UnduhCsv;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Unggah berkas ACMT/AP2T, pratinjau, commit, batal, dan rollback (PRD bagian 4 dan 8).
@@ -25,6 +34,9 @@ use Inertia\Response;
 class UnggahController extends Controller
 {
     use PilihPeriode;
+
+    /** @var array<int, array<string, int>> urutan batch per periode */
+    private array $urutan = [];
 
     public function __construct(private readonly PengelolaBatch $pengelola) {}
 
@@ -38,11 +50,12 @@ class UnggahController extends Controller
             ->when($request->input('modul'), fn ($q, $m) => $q->where('modul', $m))
             ->with('pengunggah:id,nama', 'period:id,kode')
             ->latest()
+            ->orderByDesc('id')
             ->paginate(20)
             ->withQueryString()
             ->through(fn (UploadBatch $b) => $this->ringkasBatch($b));
 
-        return Inertia::render('Unggah/Index', [
+        return Inertia::render('Koordinator/PortalUnggah', [
             'periode' => $this->infoPeriode($periode),
             'periodeOptions' => $this->opsiPeriode(),
             'periodeTerbuka' => Period::query()->terbuka()->orderByDesc('kode')->get()->map(fn (Period $p) => ['value' => $p->kode, 'label' => $p->nama()]),
@@ -57,12 +70,12 @@ class UnggahController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'file' => ['required', 'file', 'extensions:xlsx,xls,csv', 'max:'.config('sipermon.maks_berkas_kb')],
+            'file' => ['required', 'file', 'extensions:xlsx,csv', 'max:'.config('sipermon.maks_berkas_kb')],
             'periode' => ['required', 'string', Rule::exists('periods', 'kode')],
             'modul' => ['nullable', Rule::enum(Modul::class)->only(Modul::tersediaSemua())],
         ], [
-            'file.extensions' => 'Berkas harus .xlsx, .xls, atau .csv.',
-            'file.max' => 'Ukuran berkas maksimal 20 MB.',
+            'file.extensions' => 'Berkas harus .xlsx atau .csv.',
+            'file.max' => 'Ukuran berkas maksimal 25 MB.',
         ]);
 
         try {
@@ -85,13 +98,15 @@ class UnggahController extends Controller
         $batch->load('pengunggah:id,nama', 'period');
         $tingkat = $request->input('tingkat');
 
-        // Baris staging (50 per halaman) dengan penanda issue per baris.
-        $staging = $batch->stagingRows()->orderBy('row_number')->paginate(50, ['*'], 'page')->withQueryString();
+        // Pratinjau baris staging (5 per halaman, 02.4) dengan penanda issue dan nama biller per baris.
+        $staging = $batch->stagingRows()->orderBy('row_number')->paginate(5, ['*'], 'page')->withQueryString();
+        $petugas = PemetaanPetugas::muat();
+        $namaBiller = Biller::query()->pluck('nama', 'id');
         $issuePerBaris = UploadRowIssue::query()->where('batch_id', $batch->id)
             ->whereIn('row_number', $staging->getCollection()->pluck('row_number'))
             ->get(['row_number', 'kode', 'tingkat'])->groupBy('row_number');
 
-        return Inertia::render('Unggah/Show', [
+        return Inertia::render('Koordinator/DetailBatch', [
             'batch' => $this->ringkasBatch($batch) + [
                 'ringkasan' => $batch->ringkasan,
                 'storage_path' => $batch->storage_path,
@@ -102,6 +117,9 @@ class UnggahController extends Controller
                     'batal' => in_array($batch->status, [StatusBatch::SiapCommit, StatusBatch::Gagal], true),
                     'rollback' => $batch->status === StatusBatch::Committed && $batch->period->terbuka(),
                 ],
+                // Empat cek otomatis yang ditampilkan di kartu batch ditolak (04.1).
+                'cek' => $this->cekOtomatis($batch),
+                'login' => $this->hitungLogin($batch, $petugas),
                 'akan_menggantikan' => $batch->status === StatusBatch::SiapCommit && $batch->modul
                     ? UploadBatch::query()->committed()->where('period_id', $batch->period_id)->where('modul', $batch->modul->value)->value('file_name')
                     : null,
@@ -112,7 +130,7 @@ class UnggahController extends Controller
                 ->when($tingkat, fn ($q) => $q->where('tingkat', $tingkat))
                 ->orderByRaw("CASE tingkat WHEN 'error' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END")
                 ->orderBy('row_number')
-                ->paginate(50, ['*'], 'halaman_issue')
+                ->paginate(10, ['*'], 'halaman_issue')
                 ->withQueryString()
                 ->through(fn (UploadRowIssue $i) => [
                     'id' => $i->id,
@@ -125,10 +143,88 @@ class UnggahController extends Controller
             'staging' => $staging->through(fn ($r) => [
                 'row_number' => $r->row_number,
                 'data' => array_diff_key($r->data, ['raw' => true]),
+                'biller' => $namaBiller[$petugas->billerId($r->data['petugas_login'] ?? null) ?? 0] ?? null,
                 'issues' => ($issuePerBaris->get($r->row_number) ?? collect())->map(fn ($i) => ['kode' => $i->kode, 'tingkat' => $i->tingkat->value])->values(),
             ]),
             'filters' => (object) $request->only(['tingkat']),
         ]);
+    }
+
+    /**
+     * Unduh berkas asli. Di Supabase Storage (disk s3) lewat URL bertanda tangan berumur 5 menit;
+     * di disk lokal langsung dialirkan.
+     */
+    public function berkas(UploadBatch $batch): RedirectResponse|StreamedResponse
+    {
+        $disk = (string) config('sipermon.disk_unggahan');
+        Audit::catat(Audit::DOWNLOAD_FILE, $batch, null, ['file' => $batch->file_name]);
+
+        if (config("filesystems.disks.{$disk}.driver") === 's3') {
+            return redirect()->away(Storage::disk($disk)->temporaryUrl(
+                $batch->storage_path,
+                now()->addMinutes((int) config('sipermon.umur_url_unduhan_menit')),
+                ['ResponseContentDisposition' => 'attachment; filename="'.addslashes($batch->file_name).'"'],
+            ));
+        }
+
+        return Storage::disk($disk)->download($batch->storage_path, $batch->file_name);
+    }
+
+    /** Laporan error dan warning satu batch sebagai CSV (04.1). */
+    public function issues(UploadBatch $batch): StreamedResponse
+    {
+        return UnduhCsv::kirim(
+            "issue-{$this->nomor($batch)}.csv",
+            ['SHEET', 'BARIS', 'TINGKAT', 'KODE', 'PESAN'],
+            UploadRowIssue::query()->where('batch_id', $batch->id)->orderBy('id')->lazy()
+                ->map(fn (UploadRowIssue $i) => [$i->sheet, $i->row_number, $i->tingkat->value, $i->kode, $i->pesan]),
+        );
+    }
+
+    /** Template XLSX berisi judul dan header wajib setiap modul (04.5c). */
+    public function template(Request $request): BinaryFileResponse
+    {
+        $kode = $this->periode($request)?->kode ?? now()->format('Ym');
+
+        return Excel::download(new TemplateAcmtExport($kode), 'template-rekap-acmt.xlsx');
+    }
+
+    /** @return array{terpetakan: int, belum: list<string>} login petugas di staging menurut pemetaan saat ini */
+    private function hitungLogin(UploadBatch $batch, PemetaanPetugas $petugas): array
+    {
+        $login = $batch->stagingRows()->toBase()->pluck('data')
+            ->map(fn ($d) => strtolower((string) (json_decode($d, true)['petugas_login'] ?? '')))
+            ->filter()->unique()->values();
+        $belum = $login->filter(fn (string $l) => $petugas->billerId($l) === null)->values();
+
+        return ['terpetakan' => $login->count() - $belum->count(), 'belum' => $belum->all()];
+    }
+
+    /** Nomor batch yang mudah dibaca: BATCH-{yymm}-{urutan unggah di periode}. */
+    private function nomor(UploadBatch $b): string
+    {
+        $this->urutan[$b->period_id] ??= UploadBatch::query()->where('period_id', $b->period_id)
+            ->orderBy('created_at')->orderBy('id')->pluck('id')->flip()->all();
+
+        return sprintf('BATCH-%s-%02d', substr((string) $b->period?->kode, 2), ($this->urutan[$b->period_id][$b->id] ?? 0) + 1);
+    }
+
+    /** @return list<array{kunci: string, label: string, lolos: bool}> */
+    private function cekOtomatis(UploadBatch $batch): array
+    {
+        if ($batch->status === StatusBatch::Diproses) {
+            return [];
+        }
+        $kode = UploadRowIssue::query()->where('batch_id', $batch->id)->where('tingkat', TingkatIssue::Error->value)
+            ->distinct()->pluck('kode')->all();
+        $ada = fn (array $daftar) => count(array_intersect($daftar, $kode)) > 0;
+
+        return [
+            ['kunci' => 'grand_total', 'label' => 'Jumlah cocok dengan GRAND TOTAL', 'lolos' => ! $ada(['TOTAL_MISMATCH', 'TERBACA_LEBIH'])],
+            ['kunci' => 'header', 'label' => 'Header dan kolom wajib lengkap', 'lolos' => ! $ada(['HEADER_MISMATCH', 'MISSING_REQUIRED_COLUMN', 'TIPE_TIDAK_VALID', 'GAGAL_PROSES'])],
+            ['kunci' => 'sha256', 'label' => 'Checksum SHA-256 belum pernah di-commit', 'lolos' => ! $ada(['DUPLICATE_FILE', 'DUPLICATE_FILE_HASH'])],
+            ['kunci' => 'periode_unit', 'label' => 'Periode dan UNITUP sesuai', 'lolos' => ! $ada(['PERIODE_MISMATCH', 'UNIT_MISMATCH'])],
+        ];
     }
 
     /** Dipanggil frontend setiap 2 detik selama batch diproses. */
@@ -186,6 +282,7 @@ class UnggahController extends Controller
 
         return [
             'id' => $b->id,
+            'nomor' => $this->nomor($b),
             'unggahan_id' => $b->unggahan_id,
             'periode' => $b->period?->kode,
             'modul' => $b->modul?->value,

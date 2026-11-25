@@ -1,0 +1,1 @@
+import{j as m}from"./app-BRKLBqbS.js";import{c as o}from"./utils-DW364CnE.js";function a({children:r,className:e}){return m.jsx("div",{className:o("mb-4 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center",e),children:r})}export{a as T};

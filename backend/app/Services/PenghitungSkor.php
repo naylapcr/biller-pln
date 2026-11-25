@@ -7,6 +7,8 @@ use App\Enums\ModulType;
 use App\Enums\SumberKoreksi;
 use App\Models\MonthlyScore;
 use App\Models\Period;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -14,19 +16,20 @@ use Illuminate\Support\Facades\DB;
  * Skor bulanan biller (PRD 6.1). Selalu dihitung ulang penuh per periode dari tabel rincian,
  * sehingga hasilnya sama berapa kali pun dijalankan.
  *
- *   Skor Akhir = Agregat(Σ Poin_m) + Bonus_J − Denda_AP2T − Denda_BU − Denda_Absensi
- *   Poin_m     = StanValid_m × w_stan + Eviden_m × w_eviden
+ *   Skor Akhir     = (1/n) Σ Nilai_m + Bonus_J            n = modul yang punya data untuk biller itu
+ *   Nilai_pasca    = (w_R·R + w_E·E + w_K·K) × (1 − ρ_BU) × (1 − ρ_AP2T)
+ *     R            = TERBACA ÷ JMLPLG × 100 (Hari A–G dan J, Tunggal + Ganda Industri)
+ *     E            = JML FOTO BERHASIL ÷ TERBACA × 100
+ *     K            = min(pelanggan per jam ÷ SLA; 1) × 100, pelanggan per jam = TERBACA ÷ (hari aktif × 6 jam)
+ *     ρ_BU         = kasus Baca Ulang salah (bukan sisipan) ÷ TERBACA
+ *     ρ_AP2T       = koreksi AP2T dengan penyebab biller ÷ TERBACA
+ *   Nilai_pra      = (R + E) ÷ 2
+ *     R            = KDBACA normal dan dibaca sesuai jadwal ÷ pemeriksaan × 100
+ *     E            = koordinat valid ÷ pemeriksaan × 100
+ *   Bonus_J        = bobot_bonus_j × TERBACA_J ÷ JMLPLG_J (0 bila tanpa pelanggan Hari J)
  *
- *   StanValid pascabayar = TERBACA (Tunggal + Ganda, semua hari baca) − kasus Baca Ulang terbukti salah
- *   Eviden pascabayar    = JML FOTO BERHASIL
- *   StanValid prabayar   = pemeriksaan dengan KDBACA di kdbaca_normal
- *   Eviden prabayar      = pemeriksaan dengan koordinat valid (usulan PRD, belum ditetapkan)
- *   Bonus Hari J         = clamp(bonus_dasar_j + terbaca_J × poin_per_plg_j, bonus_min_j, bonus_max_j), 0 bila terbaca_J = 0
- *   Denda BU             = kasus terbukti × denda_bu_per_kasus
- *   Denda AP2T           = Σ denda per kasus menurut tingkat
- *   Denda absensi        = hari alpa × denda_alpa_per_hari (lihat LayananAbsensi)
- *
- * Peringkat: final_score menurun; bila sama, total denda lebih kecil di atas, lalu StanValid lebih besar.
+ * Peringkat: final_score menurun; bila sama, rasio Baca Ulang lebih kecil di atas, lalu terbaca lebih banyak.
+ * Absensi tidak dipakai dalam skor.
  */
 class PenghitungSkor
 {
@@ -40,80 +43,128 @@ class PenghitungSkor
     {
         $aturan = $this->parameter->untuk($periode);
         $this->agregator->bangun($periode);
+        $this->tandaiSisipan($periode);
 
-        $wo = DB::table('work_orders')->where('period_id', $periode->id)->get()->groupBy('biller_id');
-        $hariJ = DB::table('reading_logs')->where('period_id', $periode->id)->where('hari_baca', 'J')->whereNotNull('biller_id')
-            ->groupBy('biller_id')->selectRaw('biller_id, SUM(terbaca) as n')->pluck('n', 'biller_id');
+        $pasca = DB::table('reading_logs')->where('period_id', $periode->id)->whereNotNull('biller_id')
+            ->groupBy('biller_id')->select('biller_id')
+            ->selectRaw('SUM(jml_plg) as jml_plg, SUM(terbaca) as terbaca, SUM(foto_berhasil) as foto')
+            ->selectRaw("SUM(CASE WHEN hari_baca = 'J' THEN jml_plg ELSE 0 END) as jml_plg_j")
+            ->selectRaw("SUM(CASE WHEN hari_baca = 'J' THEN terbaca ELSE 0 END) as terbaca_j")
+            ->get()->keyBy('biller_id');
+        $hariAktif = $this->hariAktif($periode);
+        $pra = DB::table('work_orders')->where('period_id', $periode->id)->where('modul_type', ModulType::Prabayar->value)
+            ->get()->keyBy('biller_id');
         $salahBu = DB::table('reread_cases')->where('period_id', $periode->id)->whereNotNull('biller_id')
             ->whereIn('hasil', [HasilBacaUlang::SalahTurun->value, HasilBacaUlang::SalahLebih->value])
-            ->groupBy('biller_id')->selectRaw('biller_id, COUNT(*) as n')->pluck('n', 'biller_id');
+            ->groupBy('biller_id')->select('biller_id')
+            ->selectRaw('SUM(CASE WHEN sisipan THEN 0 ELSE 1 END) as dihitung, SUM(CASE WHEN sisipan THEN 1 ELSE 0 END) as sisipan')
+            ->get()->keyBy('biller_id');
         $ap2t = DB::table('corrections')->where('period_id', $periode->id)->where('sumber', SumberKoreksi::Ap2t->value)
-            ->whereNotNull('biller_id')->get(['biller_id', 'tingkat', 'denda_poin'])->groupBy('biller_id');
+            ->where('penyebab', 'biller')->whereNotNull('biller_id')
+            ->groupBy('biller_id')->selectRaw('biller_id, COUNT(*) as n')->pluck('n', 'biller_id');
 
-        // Denda per kasus BU mengikuti parameter periode ini.
-        DB::table('corrections')->where('period_id', $periode->id)->where('sumber', SumberKoreksi::BacaUlang->value)
-            ->update(['denda_poin' => (float) $aturan['denda_bu_per_kasus']]);
-
-        $billerIds = $wo->keys()->merge($salahBu->keys())->merge($ap2t->keys())->unique()->values();
-        $absensi = app(LayananAbsensi::class)->rekap($periode, $billerIds->all(), $aturan);
+        $billerIds = $pasca->keys()->merge($pra->keys())->unique()->values();
         $sekarang = now();
 
-        $baris = $billerIds->map(function ($billerId) use ($wo, $hariJ, $salahBu, $ap2t, $absensi, $aturan) {
-            $kerja = ($wo->get($billerId) ?? collect())->keyBy('modul_type');
-            $kasusBu = (int) ($salahBu[$billerId] ?? 0);
+        $baris = $billerIds->map(function ($billerId) use ($pasca, $hariAktif, $pra, $salahBu, $ap2t, $aturan) {
             $modul = [];
+            $bonusJ = 0.0;
+            $rasioBu = 0.0;
+            $rasioAp2t = 0.0;
+            $dasar = $plgPerJam = $nilaiK = null;
+            $terbaca = 0;
 
-            if ($p = $kerja->get(ModulType::Pascabayar->value)) {
-                $modul['pascabayar'] = $this->poin(max(0, $p->realisasi - $kasusBu), $p->eviden, $aturan) + [
-                    'terbaca' => (int) $p->realisasi, 'jml_plg' => (int) $p->target_wo, 'kasus_bu' => $kasusBu,
+            $p = $pasca->get($billerId);
+            if ($p && (int) $p->jml_plg > 0) {
+                $terbaca = (int) $p->terbaca;
+                $hari = (int) ($hariAktif[$billerId] ?? 0);
+                $R = $terbaca / (int) $p->jml_plg * 100;
+                $E = $terbaca > 0 ? (int) $p->foto / $terbaca * 100 : 0.0;
+                $plgPerJam = $hari > 0 ? $terbaca / ($hari * (float) $aturan['jam_kerja_per_hari']) : 0.0;
+                $nilaiK = min($plgPerJam / (float) $aturan['sla_plg_per_jam'], 1) * 100;
+
+                $wR = (float) $aturan['w_realisasi'] / 100;
+                $wE = (float) $aturan['w_eviden'] / 100;
+                $wK = (float) $aturan['w_kecepatan'] / 100;
+                $dasar = $wR * $R + $wE * $E + $wK * $nilaiK;
+
+                $bu = $salahBu->get($billerId);
+                $kasusBu = (int) ($bu->dihitung ?? 0);
+                $kasusAp2t = (int) ($ap2t[$billerId] ?? 0);
+                $rasioBu = $terbaca > 0 ? $kasusBu / $terbaca : 0.0;
+                $rasioAp2t = $terbaca > 0 ? $kasusAp2t / $terbaca : 0.0;
+                $nilai = $dasar * (1 - $rasioBu) * (1 - $rasioAp2t);
+
+                $jmlJ = (int) $p->jml_plg_j;
+                $terbacaJ = (int) $p->terbaca_j;
+                $bonusJ = $jmlJ > 0 ? (float) $aturan['bobot_bonus_j'] * $terbacaJ / $jmlJ : 0.0;
+
+                $modul['pascabayar'] = [
+                    'jml_plg' => (int) $p->jml_plg,
+                    'terbaca' => $terbaca,
+                    'foto' => (int) $p->foto,
+                    'realisasi' => round($R, 2),
+                    'eviden' => round($E, 2),
+                    'kecepatan' => [
+                        'terbaca' => $terbaca,
+                        'hari_aktif' => $hari,
+                        'plg_per_jam' => round($plgPerJam, 2),
+                        'nilai' => round($nilaiK, 2),
+                    ],
+                    'bobot' => ['realisasi' => $wR, 'eviden' => $wE, 'kecepatan' => $wK],
+                    'nilai_dasar' => round($dasar, 2),
+                    'baca_ulang' => ['kasus_salah' => $kasusBu, 'sisipan_dikecualikan' => (int) ($bu->sisipan ?? 0), 'rasio' => round($rasioBu, 4)],
+                    'ap2t' => ['kasus_salah' => $kasusAp2t, 'rasio' => round($rasioAp2t, 4)],
+                    'hari_j' => [
+                        'jml_plg' => $jmlJ,
+                        'terbaca' => $terbacaJ,
+                        'persen_tuntas' => $jmlJ > 0 ? round($terbacaJ / $jmlJ * 100, 1) : null,
+                        'nilai' => round($bonusJ, 2),
+                    ],
+                    'nilai' => round($nilai, 2),
+                    '_nilai' => $nilai,
                 ];
             }
-            if ($p = $kerja->get(ModulType::Prabayar->value)) {
-                $modul['prabayar'] = $this->poin($p->realisasi, $p->eviden, $aturan) + ['pemeriksaan' => (int) $p->target_wo];
+
+            $w = $pra->get($billerId);
+            if ($w && (int) $w->target_wo > 0) {
+                $R = (int) $w->realisasi / (int) $w->target_wo * 100;
+                $E = (int) $w->eviden / (int) $w->target_wo * 100;
+                $modul['prabayar'] = [
+                    'pemeriksaan' => (int) $w->target_wo,
+                    'normal_terjadwal' => (int) $w->realisasi,
+                    'koordinat_valid' => (int) $w->eviden,
+                    'realisasi' => round($R, 2),
+                    'eviden' => round($E, 2),
+                    'nilai' => round(($R + $E) / 2, 2),
+                    '_nilai' => ($R + $E) / 2,
+                ];
             }
 
-            $jumlahPoin = array_sum(array_column($modul, 'poin'));
-            $poinTugas = $aturan['mode_agregasi'] === 'rata_rata_modul' && count($modul) > 0
-                ? $jumlahPoin / count($modul)
-                : $jumlahPoin;
-
-            $terbacaJ = (int) ($hariJ[$billerId] ?? 0);
-            $bonusJ = $this->bonusHariJ($terbacaJ, $aturan);
-            $dendaBu = $kasusBu * (float) $aturan['denda_bu_per_kasus'];
-            $dendaAp2t = ($ap2t->get($billerId) ?? collect())->sum(fn ($k) => $this->dendaAp2t($k, $aturan));
-            $hadir = $absensi->get($billerId) ?? ['hadir' => 0, 'izin' => 0, 'sakit' => 0, 'alpa' => 0, 'hari_kerja' => 0];
-            $dendaAbsensi = $hadir['alpa'] * (float) ($aturan['denda_alpa_per_hari'] ?? 0);
-
-            $pasca = $kerja->get(ModulType::Pascabayar->value);
-            $jam = $pasca && $pasca->durasi_detik > 0 ? $pasca->durasi_detik / 3600 : null;
+            $rata = $modul ? array_sum(array_column($modul, '_nilai')) / count($modul) : 0.0;
+            foreach ($modul as &$m) {
+                unset($m['_nilai']);
+            }
+            unset($m);
 
             return [
                 'biller_id' => (int) $billerId,
-                'poin_tugas' => round($poinTugas, 2),
-                'poin_per_modul' => $modul,
-                'poin_hari_j' => $bonusJ,
-                'denda_bu' => round($dendaBu, 2),
-                'denda_ap2t' => round($dendaAp2t, 2),
-                'denda_absensi' => round($dendaAbsensi, 2),
-                'total_denda' => round($dendaBu + $dendaAp2t + $dendaAbsensi, 2),
-                'final_score' => round($poinTugas + $bonusJ - $dendaBu - $dendaAp2t - $dendaAbsensi, 2),
-                'stan_valid' => (int) array_sum(array_column($modul, 'stan_valid')),
-                'indikator' => [
-                    'terbaca_hari_j' => $terbacaJ,
-                    'kasus_bu' => $kasusBu,
-                    'kasus_ap2t' => ($ap2t->get($billerId) ?? collect())->count(),
-                    'absensi' => $hadir,
-                    // Ditampilkan, tidak masuk skor.
-                    'rasio_kelalaian' => $pasca && $pasca->realisasi > 0 ? round($kasusBu / $pasca->realisasi, 4) : null,
-                    // WAKTU di berkas ACMT adalah selisih kalender (termasuk malam), bukan jam kerja.
-                    'rasio_kecepatan' => $jam ? round($pasca->realisasi / $jam, 2) : null,
-                ],
+                'nilai_per_modul' => $modul,
+                'nilai_pasca_dasar' => $dasar !== null ? round($dasar, 2) : null,
+                'plg_per_jam' => $plgPerJam !== null ? round($plgPerJam, 2) : null,
+                'nilai_kecepatan' => $nilaiK !== null ? round($nilaiK, 2) : null,
+                'rasio_bu' => round($rasioBu, 4),
+                'rasio_ap2t' => round($rasioAp2t, 4),
+                'rata_rata_modul' => round($rata, 2),
+                'bonus_hari_j' => round($bonusJ, 2),
+                'final_score' => round($rata + $bonusJ, 2),
+                'terbaca' => $terbaca,
             ];
         });
 
-        // Peringkat: skor ↓, total denda ↑, StanValid ↓.
-        $urut = $baris->sort(fn ($a, $b) => [$b['final_score'], $a['total_denda'], $b['stan_valid']]
-            <=> [$a['final_score'], $b['total_denda'], $a['stan_valid']])->values();
+        // Peringkat: skor ↓, rasio Baca Ulang ↑, terbaca ↓.
+        $urut = $baris->sort(fn ($a, $b) => [$b['final_score'], $a['rasio_bu'], $b['terbaca']]
+            <=> [$a['final_score'], $b['rasio_bu'], $a['terbaca']])->values();
 
         DB::transaction(function () use ($periode, $urut, $aturan, $final, $sekarang) {
             MonthlyScore::query()->where('period_id', $periode->id)->whereNotIn('biller_id', $urut->pluck('biller_id'))->delete();
@@ -123,7 +174,7 @@ class PenghitungSkor
                     ['biller_id' => $b['biller_id'], 'period_id' => $periode->id],
                     $b + [
                         'peringkat' => $i + 1,
-                        'kategori' => $b['final_score'] < (float) $aturan['ambang_evaluasi'] ? 'perlu_evaluasi' : 'stabil',
+                        'kategori' => self::kategori($b['final_score'], $aturan),
                         'rules_snapshot' => $aturan,
                         'is_final' => $final,
                         'dihitung_at' => $sekarang,
@@ -135,37 +186,79 @@ class PenghitungSkor
         return MonthlyScore::query()->where('period_id', $periode->id)->orderBy('peringkat')->get();
     }
 
-    /** @return array{stan_valid: int, eviden: int, poin: float} */
-    private function poin(int|string $stanValid, int|string $eviden, array $aturan): array
+    /** Grade A ≥ ambang_grade_a, Kritis < ambang_kritis, selain itu Perlu Evaluasi. */
+    public static function kategori(float $skor, array $aturan): string
     {
-        $sv = (int) $stanValid;
-        $ev = (int) $eviden;
-
-        return [
-            'stan_valid' => $sv,
-            'eviden' => $ev,
-            'poin' => round($sv * (float) $aturan['w_stan'] + $ev * (float) $aturan['w_eviden'], 2),
-        ];
+        return match (true) {
+            $skor >= (float) $aturan['ambang_grade_a'] => 'Grade A',
+            $skor < (float) $aturan['ambang_kritis'] => 'Kritis',
+            default => 'Perlu Evaluasi',
+        };
     }
 
-    /** Bonus Hari J. Selama bonus_dasar_j atau poin_per_plg_j belum ditetapkan, bonus = 0. */
-    private function bonusHariJ(int $terbacaJ, array $aturan): float
+    /**
+     * Hari aktif per biller: semua tanggal dari TGL MULAI sampai TGL SELESAI di RBM biller itu,
+     * digabung agar hari baca yang tumpang tindih tidak terhitung dua kali.
+     *
+     * @return array<int, int>
+     */
+    private function hariAktif(Period $periode): array
     {
-        if ($terbacaJ === 0 || $aturan['bonus_dasar_j'] === null || $aturan['poin_per_plg_j'] === null) {
-            return 0.0;
-        }
-        $nilai = (float) $aturan['bonus_dasar_j'] + $terbacaJ * (float) $aturan['poin_per_plg_j'];
+        $hari = [];
+        DB::table('reading_logs')->where('period_id', $periode->id)->whereNotNull('biller_id')
+            ->whereNotNull('mulai_at')->whereNotNull('selesai_at')
+            ->orderBy('id')->select(['id', 'biller_id', 'mulai_at', 'selesai_at'])
+            ->chunk(1000, function ($rows) use (&$hari) {
+                foreach ($rows as $r) {
+                    $mulai = CarbonImmutable::parse($r->mulai_at)->startOfDay();
+                    $selesai = CarbonImmutable::parse($r->selesai_at)->startOfDay();
+                    if ($selesai->lessThan($mulai)) {
+                        continue;
+                    }
+                    foreach (CarbonPeriod::create($mulai, $selesai) as $t) {
+                        $hari[$r->biller_id][$t->toDateString()] = true;
+                    }
+                }
+            });
 
-        return round(min(max($nilai, (float) $aturan['bonus_min_j']), (float) $aturan['bonus_max_j']), 2);
+        return array_map('count', $hari);
     }
 
-    private function dendaAp2t(object $kasus, array $aturan): float
+    /**
+     * Kasus Baca Ulang yang dibaca di luar jendela hari baca RBM-nya (jam mulai–selesai RBM di rekap
+     * pascabayar, ± toleransi_sisipan_menit) ditandai sisipan dan dikecualikan dari rasio kesalahan.
+     */
+    private function tandaiSisipan(Period $periode): void
     {
-        $tingkat = (array) ($aturan['denda_ap2t_tingkat']['tingkat'] ?? []);
-        if ($kasus->tingkat !== null && isset($tingkat[$kasus->tingkat])) {
-            return (float) $tingkat[$kasus->tingkat];
-        }
+        $toleransi = (int) config('sipermon.toleransi_sisipan_menit') * 60;
+        $detik = fn (string $waktu): int => CarbonImmutable::parse($waktu)->getTimestamp();
+        $jendela = DB::table('reading_logs')->where('period_id', $periode->id)
+            ->whereNotNull('mulai_at')->whereNotNull('selesai_at')
+            ->groupBy('kode_rbm')->selectRaw('kode_rbm, MIN(mulai_at) as mulai, MAX(selesai_at) as selesai')
+            ->get()->mapWithKeys(fn ($r) => [strtoupper($r->kode_rbm) => [
+                $detik($r->mulai) - $toleransi, $detik($r->selesai) + $toleransi,
+            ]]);
 
-        return (float) $kasus->denda_poin > 0 ? (float) $kasus->denda_poin : (float) ($aturan['denda_ap2t_tingkat']['min'] ?? 0);
+        $ya = [];
+        $tidak = [];
+        DB::table('reread_cases')->where('period_id', $periode->id)->orderBy('id')
+            ->select(['id', 'kode_rbm', 'tgl_baca', 'sisipan'])
+            ->chunk(1000, function ($rows) use ($jendela, $detik, &$ya, &$tidak) {
+                foreach ($rows as $r) {
+                    $w = $r->kode_rbm ? $jendela->get(strtoupper($r->kode_rbm)) : null;
+                    $tgl = $r->tgl_baca ? $detik($r->tgl_baca) : null;
+                    $sisipan = $w !== null && $tgl !== null && ($tgl < $w[0] || $tgl > $w[1]);
+                    if ($sisipan !== (bool) $r->sisipan) {
+                        $sisipan ? $ya[] = $r->id : $tidak[] = $r->id;
+                    }
+                }
+            });
+
+        foreach (array_chunk($ya, 500) as $ids) {
+            DB::table('reread_cases')->whereIn('id', $ids)->update(['sisipan' => true]);
+        }
+        foreach (array_chunk($tidak, 500) as $ids) {
+            DB::table('reread_cases')->whereIn('id', $ids)->update(['sisipan' => false]);
+        }
     }
 }

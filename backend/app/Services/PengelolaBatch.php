@@ -62,7 +62,7 @@ class PengelolaBatch
             'diunggah_oleh' => $oleh->id,
         ]);
 
-        Audit::catat('unggah', $batch, null, ['periode' => $periode->kode, 'modul' => $modul?->value, 'file' => $batch->file_name], $oleh->id);
+        Audit::catat(Audit::UPLOAD_FILE, $batch, null, ['periode' => $periode->kode, 'modul' => $modul?->value, 'file' => $batch->file_name], $oleh->id);
         ParseUploadJob::dispatch($batch->id);
 
         return $batch;
@@ -111,14 +111,14 @@ class PengelolaBatch
 
     private function simpanHasil(UploadBatch $batch, HasilParsing $hasil, float $mulai): void
     {
-        // DUPLICATE_FILE: berkas yang sama sudah di-commit untuk modul ini.
+        // DUPLICATE_FILE_HASH: berkas yang sama sudah di-commit untuk modul ini.
         $kembar = $batch->modul === null ? null : UploadBatch::query()->committed()
             ->where('checksum_sha256', $batch->checksum_sha256)
             ->where('modul', $batch->modul->value)
             ->whereKeyNot($batch->id)
             ->first();
         if ($kembar) {
-            $hasil->error(null, 'DUPLICATE_FILE', "Berkas yang sama sudah di-commit pada {$kembar->committed_at?->format('d/m/Y H:i')} ({$kembar->file_name}).");
+            $hasil->error(null, 'DUPLICATE_FILE_HASH', "Berkas yang sama sudah di-commit pada {$kembar->committed_at?->format('d/m/Y H:i')} ({$kembar->file_name}).");
         }
 
         DB::transaction(function () use ($batch, $hasil) {
@@ -206,7 +206,7 @@ class PengelolaBatch
         });
 
         $this->skor->hitung($batch->period);
-        Audit::catat('commit', $batch, $lama ? ['batch_digantikan' => $lama->id] : null, [
+        Audit::catat(Audit::COMMIT_BATCH, $batch, $lama ? ['batch_digantikan' => $lama->id] : null, [
             'periode' => $batch->period->kode, 'modul' => $batch->modul->value, 'baris' => $batch->ringkasan['baris_ditulis'] ?? null,
         ], $oleh->id);
 
@@ -224,7 +224,7 @@ class PengelolaBatch
             $batch->stagingRows()->delete();
             $batch->update(['status' => StatusBatch::Dibatalkan]);
         });
-        Audit::catat('batal_batch', $batch, null, ['modul' => $batch->modul?->value], $oleh->id);
+        Audit::catat(Audit::CANCEL_BATCH, $batch, null, ['modul' => $batch->modul?->value], $oleh->id);
     }
 
     /**
@@ -268,7 +268,7 @@ class PengelolaBatch
         }));
 
         $this->skor->hitung($batch->period);
-        Audit::catat('rollback', $batch, ['status' => 'committed'], [
+        Audit::catat(Audit::ROLLBACK_BATCH, $batch, ['status' => 'committed'], [
             'status' => 'dibatalkan', 'batch_dipulihkan' => $sebelumnya?->id,
         ], $oleh->id);
 

@@ -45,7 +45,7 @@ export function formatTanggal(value: string | Date | null | undefined, pola = 'd
 }
 
 export function formatTanggalWaktu(value: string | Date | null | undefined): string {
-    return formatTanggal(value, "d MMM yyyy, HH.mm 'WIB'");
+    return formatTanggal(value, "d MMM yyyy, HH:mm 'WIB'");
 }
 
 export function formatRelatif(value: string | Date | null | undefined): string {

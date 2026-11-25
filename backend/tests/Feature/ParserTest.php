@@ -94,15 +94,17 @@ test('Baca Ulang: BELUM BACA disimpan sebagai info dan tidak dinilai; petugas di
         ->and($h->adaError())->toBeFalse();
 });
 
-test('aturan Baca Ulang 6.3: stan turun, kenaikan melebihi daya × jam, atau wajar', function (float $stanBu, int $jam, HasilBacaUlang $hasil) {
+test('aturan Baca Ulang 6.2: stan turun, stan sama, kenaikan melebihi daya × jam + toleransi 1 kWh, atau wajar', function (float $stanBu, int $jam, HasilBacaUlang $hasil) {
     $t = CarbonImmutable::create(2026, 10, 26, 8, 0, 0, 'Asia/Jakarta');
 
     expect(PenilaiBacaUlang::nilai('SUDAH BACA', 1000, $stanBu, $t, $t->addHours($jam), 1300)['hasil'])->toBe($hasil);
 })->with([
     'wajar (≤ 15,6 kWh dalam 12 jam)' => [1015.6, 12, HasilBacaUlang::Wajar],
-    'kenaikan melebihi batas' => [1016, 12, HasilBacaUlang::SalahLebih],
+    'masih dalam toleransi 1 kWh' => [1016.6, 12, HasilBacaUlang::Wajar],
+    'kenaikan melebihi batas + toleransi' => [1017, 12, HasilBacaUlang::SalahLebih],
     'stan BU lebih kecil' => [999, 12, HasilBacaUlang::SalahTurun],
-    'dibaca di jam yang sama, stan naik' => [1001, 0, HasilBacaUlang::SalahLebih],
+    'stan sama' => [1000, 12, HasilBacaUlang::Sama],
+    'dibaca di jam yang sama, stan naik 2 kWh' => [1002, 0, HasilBacaUlang::SalahLebih],
 ]);
 
 test('Prabayar: koordinat dinormalisasi dan di luar kotak Pekanbaru diberi warning', function () {

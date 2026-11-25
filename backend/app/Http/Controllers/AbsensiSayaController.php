@@ -2,55 +2,42 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Role;
 use App\Enums\StatusAbsensi;
-use App\Http\Controllers\Concerns\PilihPeriode;
-use App\Models\Attendance;
-use App\Models\Period;
 use App\Services\LayananAbsensi;
-use App\Services\ParameterSkor;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
-/** Biller mengisi absensi hariannya sendiri dan melihat rekap kehadirannya. */
+/**
+ * Absensi Saya (01.2 Biller, 02.6 Koordinator). Absen sekali sehari atas nama akun yang login,
+ * untuk hari ini menurut jam server (WIB). Tidak memengaruhi skor.
+ */
 class AbsensiSayaController extends Controller
 {
-    use PilihPeriode;
-
     public function __construct(private readonly LayananAbsensi $absensi) {}
 
-    public function index(Request $request, ParameterSkor $parameter): Response
+    public function index(Request $request): Response
     {
-        $biller = $request->user()->biller;
-        abort_unless($biller, 403, 'Akun ini belum ditautkan ke data biller. Hubungi Super Admin.');
-
+        $request->validate(['bulan' => ['nullable', 'date_format:Y-m']]);
+        $user = $request->user();
         $hariIni = LayananAbsensi::hariIni();
-        $periode = $request->filled('periode') ? $this->periode($request) : (Period::untukTanggal($hariIni) ?? $this->periode($request));
-        $aturan = $periode ? $parameter->untuk($periode) : null;
-        $absenHariIni = Attendance::query()->where('biller_id', $biller->id)->whereDate('tanggal', $hariIni->toDateString())->first();
+        $bulan = $request->filled('bulan') ? CarbonImmutable::createFromFormat('Y-m', $request->string('bulan')->toString())->startOfMonth() : $hariIni->startOfMonth();
+        $absen = $this->absensi->hariIniMilik($user);
 
-        return Inertia::render('Saya/Absensi', [
+        return Inertia::render($user->role === Role::Biller ? 'Biller/AbsensiSaya' : 'Koordinator/AbsensiSaya', [
             'hariIni' => [
                 'tanggal' => $hariIni->toDateString(),
-                'hari_kerja' => $periode ? in_array($hariIni->toDateString(), $this->absensi->hariKerja($periode, $aturan), true) : true,
-                'absen' => $absenHariIni ? [
-                    'status' => $absenHariIni->status->value,
-                    'keterangan' => $absenHariIni->keterangan,
-                    'sumber' => $absenHariIni->sumber,
-                    'waktu' => $absenHariIni->updated_at?->toIso8601String(),
-                ] : null,
-                'periode' => Period::untukTanggal($hariIni)?->kode,
+                'jam_server' => now()->toIso8601String(),
+                'hari_kerja' => LayananAbsensi::hariKerja($hariIni),
+                'absen' => $absen ? LayananAbsensi::baris($absen) : null,
             ],
-            'periode' => $periode ? $this->infoPeriode($periode) + [
-                'absensi_mulai' => $periode->absensi_mulai?->toDateString(),
-                'absensi_selesai' => $periode->absensi_selesai?->toDateString(),
-            ] : null,
-            'periodeOptions' => $this->opsiPeriode(),
-            'harian' => $periode ? $this->absensi->harian($periode, $biller) : [],
-            'rekap' => $periode ? $this->absensi->rekap($periode, [$biller->id], $aturan)->get($biller->id) : null,
-            'dendaPerAlpa' => (float) ($aturan['denda_alpa_per_hari'] ?? 0),
+            'bulan' => $bulan->format('Y-m'),
+            'ringkasan' => $this->absensi->ringkasan($user, $bulan),
+            'riwayat' => $this->absensi->riwayat($user, $bulan),
         ]);
     }
 
@@ -58,11 +45,19 @@ class AbsensiSayaController extends Controller
     {
         $data = $request->validate([
             'status' => ['required', Rule::enum(StatusAbsensi::class)->except([StatusAbsensi::Alpa])],
-            'keterangan' => ['nullable', 'string', 'max:300'],
-        ]);
+            'keterangan' => ['nullable', 'string', 'max:300', Rule::requiredIf(fn () => in_array($request->input('status'), ['izin', 'sakit'], true))],
+            'lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180'],
+        ], ['keterangan.required' => 'Tulis keterangan untuk izin atau sakit.']);
 
-        $absen = $this->absensi->absenSendiri($request->user(), StatusAbsensi::from($data['status']), $data['keterangan'] ?? null);
+        $absen = $this->absensi->absenSendiri(
+            $request->user(),
+            StatusAbsensi::from($data['status']),
+            $data['keterangan'] ?? null,
+            isset($data['lat']) ? (float) $data['lat'] : null,
+            isset($data['lng']) ? (float) $data['lng'] : null,
+        );
 
-        return back()->with('success', "Absensi hari ini tercatat: {$absen->status->label()}.");
+        return back()->with('success', "Absensi hari ini tercatat: {$absen->status->label()} pukul {$absen->absen_at->timezone(config('app.timezone'))->format('H.i')} WIB.");
     }
 }

@@ -1,0 +1,27 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="1280" height="832" viewBox="0 0 1280 832" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Background Graphic" clip-path="url(#clip0_0_28)">
+<rect width="1280" height="832" fill="url(#paint0_linear_0_28)"/>
+<line id="Line" y1="99.5" x2="750" y2="99.5" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_2" y1="219.5" x2="750" y2="219.5" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_3" y1="339.5" x2="750" y2="339.5" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_4" y1="459.5" x2="750" y2="459.5" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_5" y1="579.5" x2="750" y2="579.5" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_6" y1="699.5" x2="750" y2="699.5" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_7" x1="80.5" y1="832" x2="80.5" y2="1664" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_8" x1="220.5" y1="832" x2="220.5" y2="1664" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_9" x1="360.5" y1="832" x2="360.5" y2="1664" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_10" x1="500.5" y1="832" x2="500.5" y2="1664" stroke="#4073CC" stroke-opacity="0.07"/>
+<line id="Line_11" x1="640.5" y1="832" x2="640.5" y2="1664" stroke="#4073CC" stroke-opacity="0.07"/>
+<circle id="Ambient Light" cx="150" cy="430" r="250" fill="#0D73F2" fill-opacity="0.15"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_28" x1="0" y1="416" x2="1280" y2="416" gradientUnits="userSpaceOnUse">
+<stop stop-color="#0D1429"/>
+<stop offset="0.55" stop-color="#121F3D"/>
+<stop offset="1" stop-color="#080D1C"/>
+</linearGradient>
+<clipPath id="clip0_0_28">
+<rect width="1280" height="832" fill="white"/>
+</clipPath>
+</defs>
+</svg>

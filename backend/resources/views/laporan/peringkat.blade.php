@@ -19,7 +19,8 @@
         table.data td { padding: 4px 5px; border-bottom: 1px solid #EDF1F5; }
         .kanan { text-align: right; }
         .mono { font-family: "DejaVu Sans Mono", monospace; }
-        .evaluasi { color: #A61F17; }
+        .kritis { color: #A61F17; }
+        .evaluasi { color: #6B5000; }
         .kaki { margin-top: 12px; color: #546474; font-size: 8px; }
     </style>
 </head>
@@ -37,12 +38,13 @@
     </table>
 
     @php($fmt = fn ($n, $d = 0) => $n === null ? '–' : number_format((float) $n, $d, ',', '.'))
+    @php($pct = fn ($n) => $n === null ? '–' : number_format((float) $n * 100, 2, ',', '.').'%')
     <table class="ringkas">
         <tr>
-            <td><div class="label">Total WO</div><div class="angka">{{ $fmt($ringkasan['total_wo']) }}</div></td>
-            <td><div class="label">Realisasi</div><div class="angka">{{ $ringkasan['realisasi_persen'] !== null ? $fmt($ringkasan['realisasi_persen'], 2).'%' : '–' }}</div></td>
-            <td><div class="label">Rasio kecepatan (terbaca per jam kalender)</div><div class="angka">{{ $fmt($ringkasan['rasio_kecepatan'], 2) }}</div></td>
-            <td><div class="label">Total denda (poin)</div><div class="angka">{{ $fmt($ringkasan['total_denda'], 1) }}</div></td>
+            <td><div class="label">Realisasi terbaca pascabayar</div><div class="angka">{{ $ringkasan['realisasi']['persen'] !== null ? $fmt($ringkasan['realisasi']['persen'], 2).'%' : '–' }}</div></td>
+            <td><div class="label">Rata-rata skor {{ $ringkasan['rata_skor']['jumlah_biller'] }} biller</div><div class="angka">{{ $fmt($ringkasan['rata_skor']['nilai'], 1) }}</div></td>
+            <td><div class="label">Kecepatan · eviden</div><div class="angka">{{ $fmt($ringkasan['kecepatan_eviden']['plg_per_jam'], 1) }} plg/jam · {{ $fmt($ringkasan['kecepatan_eviden']['eviden_persen'], 1) }}%</div></td>
+            <td><div class="label">Rasio kesalahan BU · AP2T</div><div class="angka">{{ $pct($ringkasan['mutu']['rasio_bu']) }} · {{ $pct($ringkasan['mutu']['rasio_ap2t']) }}</div></td>
         </tr>
     </table>
 
@@ -50,14 +52,13 @@
         <thead>
             <tr>
                 <th>#</th>
-                <th>Biller</th>
-                <th>Login / kode</th>
-                <th class="kanan">Pasca terbaca</th>
-                <th class="kanan">Kasus BU</th>
-                <th class="kanan">Poin pasca</th>
-                <th class="kanan">Poin prabayar</th>
+                <th>Nama</th>
+                <th>Login ACMT</th>
+                <th class="kanan">Pascabayar</th>
+                <th class="kanan">Prabayar</th>
                 <th class="kanan">Bonus J</th>
-                <th class="kanan">Denda</th>
+                <th class="kanan">Rasio BU</th>
+                <th class="kanan">Rasio AP2T</th>
                 <th class="kanan">Skor akhir</th>
                 <th>Kategori</th>
             </tr>
@@ -67,22 +68,22 @@
                 <tr>
                     <td class="mono">{{ $b['peringkat'] }}</td>
                     <td>{{ $b['nama'] }}</td>
-                    <td class="mono">{{ $b['login_acmt'] }} · {{ $b['kode_petugas'] }}</td>
-                    <td class="kanan mono">{{ $fmt($b['pascabayar']['terbaca'] ?? null) }}</td>
-                    <td class="kanan mono">{{ $fmt($b['pascabayar']['kasus_bu'] ?? null) }}</td>
-                    <td class="kanan mono">{{ $fmt($b['pascabayar']['poin'] ?? null, 1) }}</td>
-                    <td class="kanan mono">{{ $fmt($b['prabayar']['poin'] ?? null, 1) }}</td>
-                    <td class="kanan mono">{{ $fmt($b['poin_hari_j'], 1) }}</td>
-                    <td class="kanan mono">{{ $fmt($b['total_denda'], 1) }}</td>
+                    <td class="mono">{{ $b['login_acmt'] }}</td>
+                    <td class="kanan mono">{{ $fmt($b['pascabayar'], 1) }}</td>
+                    <td class="kanan mono">{{ $fmt($b['prabayar'], 1) }}</td>
+                    <td class="kanan mono">{{ $b['bonus_hari_j'] ? '+'.$fmt($b['bonus_hari_j'], 1) : '0' }}</td>
+                    <td class="kanan mono">{{ $pct($b['rasio_bu']) }}</td>
+                    <td class="kanan mono">{{ $pct($b['rasio_ap2t']) }}</td>
                     <td class="kanan mono"><strong>{{ $fmt($b['final_score'], 1) }}</strong></td>
-                    <td class="{{ $b['kategori'] === 'perlu_evaluasi' ? 'evaluasi' : '' }}">{{ $b['kategori'] === 'perlu_evaluasi' ? 'Perlu evaluasi' : 'Stabil' }}</td>
+                    <td class="{{ $b['kategori'] === 'Kritis' ? 'kritis' : ($b['kategori'] === 'Perlu Evaluasi' ? 'evaluasi' : '') }}">{{ $b['kategori'] }}</td>
                 </tr>
             @endforeach
         </tbody>
     </table>
 
     <p class="kaki">
-        Skor akhir = Σ poin modul (StanValid × w_stan + Eviden × w_eviden) + bonus Hari J − denda AP2T − denda Baca Ulang.
+        Skor akhir = rata-rata nilai modul (skala 0–100) + bonus Hari J, sehingga bisa melewati 100.
+        Nilai pascabayar = (40% realisasi + 30% eviden + 30% kecepatan) × (1 − rasio Baca Ulang) × (1 − rasio AP2T).
         Dicetak {{ $dicetak->locale('id')->translatedFormat('j F Y H:i') }} WIB oleh {{ $oleh }}.
     </p>
 </body>

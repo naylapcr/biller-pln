@@ -1,0 +1,155 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource/cousine/400.css';
+@import '@fontsource/cousine/700.css';
+
+@source '../../../../backend/resources/views';
+@source '../..';
+
+/*
+ * Token desain dari Figma "Kinerja Biller — UI Final". Komponen memakai token ini, bukan hex.
+ */
+@theme {
+    --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Cousine', ui-monospace, 'SFMono-Regular', monospace;
+
+    --color-pln-blue: #1d4ed8;
+    --color-pln-blue-dark: #1e3a8a;
+    --color-pln-blue-light: #dbeafe;
+    --color-pln-blue-soft: #bfdbfe;
+    --color-pln-blue-row: #eff6ff;
+    --color-pln-yellow: #facc15;
+    --color-pln-yellow-light: #fef3c7;
+    --color-pln-yellow-ink: #b45309;
+    --color-pln-yellow-row: #fffbeb;
+    --color-pln-yellow-line: #fde68a;
+    --color-pln-red: #dc2626;
+
+    --color-sky-side: #bae6fd;
+    --color-sky-tint: #e0f2fe;
+    --color-sky-row: #f0f9ff;
+    --color-sky-line: #38bdf8;
+    --color-sky-ink: #0369a1;
+    --color-sky-val: #0284c7;
+
+    --color-error-ink: #b91c1c;
+    --color-error-tint: #fee2e2;
+    --color-error-deep: #991b1b;
+    --color-error-line: #fca5a5;
+    --color-error-row: #fef2f2;
+    --color-success: #059669;
+    --color-success-dark: #047857;
+    --color-success-ink: #15803d;
+    --color-success-tint: #dcfce7;
+    --color-success-row: #ecfdf5;
+    --color-success-line: #10b981;
+    --color-amber: #d97706;
+    --color-violet: #7c3aed;
+    --color-violet-tint: #f3e8ff;
+
+    --color-ink: #0f172a;
+    --color-ink-soft: #1e293b;
+    --color-slate-ink: #334155;
+    --color-slate-mid: #475569;
+    --color-muted-ink: #64748b;
+    --color-faint: #94a3b8;
+    --color-canvas: #f8fafc;
+    --color-line: #e2e8f0;
+    --color-line-strong: #cbd5e1;
+    --color-line-row: #f1f5f9;
+    --color-table-head: #f8fafc;
+
+    --radius-9: 10px;
+    --radius-10: 10px;
+    --radius-14: 16px;
+
+    --shadow-kartu: 0 2px 8px 0 rgb(15 23 42 / 0.04);
+    --shadow-tombol: 0 3px 8px 0 rgb(29 78 216 / 0.18);
+
+    --text-page-title: 20px;
+    --text-page-title--line-height: 1.25;
+    --text-page-title--font-weight: 800;
+    --text-section-title: 15px;
+    --text-section-title--line-height: 1.25;
+    --text-section-title--font-weight: 700;
+
+    --breakpoint-xs: 360px;
+}
+
+/* Variabel shadcn/ui dipetakan ke token PLN. */
+:root {
+    --radius: 0.625rem;
+    --background: #ffffff;
+    --foreground: var(--color-ink);
+    --card: #ffffff;
+    --card-foreground: var(--color-ink);
+    --popover: #ffffff;
+    --popover-foreground: var(--color-ink);
+    --primary: var(--color-pln-blue);
+    --primary-foreground: #ffffff;
+    --secondary: var(--color-canvas);
+    --secondary-foreground: var(--color-ink);
+    --muted: var(--color-table-head);
+    --muted-foreground: var(--color-muted-ink);
+    --accent: var(--color-pln-blue-light);
+    --accent-foreground: var(--color-pln-blue-dark);
+    --destructive: var(--color-pln-red);
+    --border: var(--color-line);
+    --input: var(--color-line);
+    --ring: var(--color-pln-blue);
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+
+    /* Tabel lebar digulir di dalam kartunya, tidak melebarkan kolom grid (penting di HP 375 px). */
+    .grid > * {
+        min-width: 0;
+    }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        @apply bg-canvas font-sans text-sm text-ink;
+        scrollbar-width: thin;
+    }
+
+    .font-mono {
+        letter-spacing: 0;
+    }
+
+    button:not(:disabled),
+    [role='button']:not(:disabled) {
+        cursor: pointer;
+    }
+}

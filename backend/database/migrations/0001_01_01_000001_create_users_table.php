@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('kode_petugas_acmt', 10)->unique();
             $table->string('login_acmt', 60)->unique(); // selalu huruf kecil
             $table->boolean('is_active')->default(true);
-            $table->timestamps();
+            $table->timestampsTz();
         });
 
         Schema::create('users', function (Blueprint $table) {
@@ -28,9 +28,12 @@ return new class extends Migration
             $table->string('role', 20); // super_admin, admin, biller
             $table->foreignId('biller_id')->nullable()->unique()->constrained('billers')->restrictOnDelete();
             $table->boolean('is_active')->default(true);
-            $table->timestamp('last_login_at')->nullable();
+            // Akun terkunci setelah 5 kali gagal login berturut-turut sampai dibuka Super Admin.
+            $table->unsignedSmallInteger('gagal_login')->default(0);
+            $table->timestampTz('terkunci_at')->nullable();
+            $table->timestampTz('last_login_at')->nullable();
             $table->rememberToken();
-            $table->timestamps();
+            $table->timestampsTz();
 
             $table->index('role');
         });

@@ -5,28 +5,29 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** Skor bulanan satu biller (PRD 6.1). Skor akhir = rata-rata nilai modul + bonus Hari J, bisa > 100. */
 class MonthlyScore extends Model
 {
     protected $fillable = [
-        'biller_id', 'period_id', 'poin_tugas', 'poin_per_modul', 'poin_hari_j', 'denda_bu', 'denda_ap2t', 'denda_absensi',
-        'total_denda', 'final_score', 'stan_valid', 'peringkat', 'kategori', 'indikator', 'rules_snapshot',
-        'is_final', 'dihitung_at',
+        'biller_id', 'period_id', 'nilai_per_modul', 'nilai_pasca_dasar', 'plg_per_jam', 'nilai_kecepatan', 'rasio_bu',
+        'rasio_ap2t', 'rata_rata_modul', 'bonus_hari_j', 'final_score', 'terbaca', 'peringkat', 'kategori',
+        'rules_snapshot', 'is_final', 'dihitung_at',
     ];
 
     protected function casts(): array
     {
         return [
-            'poin_tugas' => 'float',
-            'poin_per_modul' => 'array',
-            'poin_hari_j' => 'float',
-            'denda_bu' => 'float',
-            'denda_ap2t' => 'float',
-            'denda_absensi' => 'float',
-            'total_denda' => 'float',
+            'nilai_per_modul' => 'array',
+            'nilai_pasca_dasar' => 'float',
+            'plg_per_jam' => 'float',
+            'nilai_kecepatan' => 'float',
+            'rasio_bu' => 'float',
+            'rasio_ap2t' => 'float',
+            'rata_rata_modul' => 'float',
+            'bonus_hari_j' => 'float',
             'final_score' => 'float',
-            'stan_valid' => 'integer',
+            'terbaca' => 'integer',
             'peringkat' => 'integer',
-            'indikator' => 'array',
             'rules_snapshot' => 'array',
             'is_final' => 'boolean',
             'dihitung_at' => 'datetime',

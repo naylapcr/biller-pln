@@ -9,7 +9,7 @@ use Maatwebsite\Excel\Concerns\WithColumnFormatting;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithTitle;
 
-/** Laporan peringkat: angka mentah tiap komponen skor. */
+/** Laporan peringkat (02.8): kolom sama dengan pratinjau di halaman Laporan & Ekspor. */
 class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting, WithHeadings, WithTitle
 {
     /** @param  Collection<int, array<string, mixed>>  $baris */
@@ -22,12 +22,7 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
 
     public function headings(): array
     {
-        return [
-            'Peringkat', 'Nama biller', 'Login ACMT', 'Kode petugas', 'Zona',
-            'Pasca: terbaca', 'Pasca: kasus BU', 'Pasca: StanValid', 'Pasca: eviden (foto)', 'Pasca: poin',
-            'Prabayar: pemeriksaan', 'Prabayar: StanValid', 'Prabayar: eviden', 'Prabayar: poin',
-            'Poin tugas', 'Bonus Hari J', 'Total denda', 'Skor akhir', 'Kategori',
-        ];
+        return ['#', 'Nama', 'NIP', 'Login ACMT', 'Pascabayar', 'Prabayar', 'Bonus J', 'Rasio BU', 'Rasio AP2T', 'Skor Akhir', 'Kategori'];
     }
 
     public function array(): array
@@ -35,28 +30,20 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
         return $this->baris->map(fn (array $b) => [
             $b['peringkat'],
             $b['nama'],
+            $b['nip'],
             $b['login_acmt'],
-            $b['kode_petugas'],
-            $b['zona_wilayah'],
-            $b['pascabayar']['terbaca'] ?? null,
-            $b['pascabayar']['kasus_bu'] ?? null,
-            $b['pascabayar']['stan_valid'] ?? null,
-            $b['pascabayar']['eviden'] ?? null,
-            $b['pascabayar']['poin'] ?? null,
-            $b['prabayar']['pemeriksaan'] ?? null,
-            $b['prabayar']['stan_valid'] ?? null,
-            $b['prabayar']['eviden'] ?? null,
-            $b['prabayar']['poin'] ?? null,
-            $b['poin_tugas'],
-            $b['poin_hari_j'],
-            $b['total_denda'],
+            $b['pascabayar'],
+            $b['prabayar'],
+            $b['bonus_hari_j'],
+            $b['rasio_bu'],
+            $b['rasio_ap2t'],
             $b['final_score'],
-            $b['kategori'] === 'perlu_evaluasi' ? 'Perlu evaluasi' : 'Stabil',
+            $b['kategori'],
         ])->all();
     }
 
     public function columnFormats(): array
     {
-        return ['J' => '#,##0.00', 'N' => '#,##0.00', 'O' => '#,##0.00', 'P' => '#,##0.00', 'Q' => '#,##0.00', 'R' => '#,##0.00'];
+        return ['E' => '0.00', 'F' => '0.00', 'G' => '0.00', 'H' => '0.00%', 'I' => '0.00%', 'J' => '0.00'];
     }
 }

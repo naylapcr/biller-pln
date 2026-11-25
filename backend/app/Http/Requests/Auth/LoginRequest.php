@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
+use App\Services\Audit;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -11,8 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class LoginRequest extends FormRequest
 {
-    /** Batas percobaan login per menit (PRD: 5/menit). */
-    private const MAX_PERCOBAAN = 5;
+    /** Batas percobaan login per menit per username dan IP. */
+    private const MAX_PERCOBAAN_PER_MENIT = 5;
 
     public function authorize(): bool
     {
@@ -24,51 +26,69 @@ class LoginRequest extends FormRequest
         return [
             'login' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
-            'remember' => ['boolean'],
         ];
     }
 
     public function attributes(): array
     {
         return [
-            'login' => 'username atau NIP',
+            'login' => 'NIP/username',
             'password' => 'kata sandi',
         ];
     }
 
     /**
-     * Login memakai username_nip. Akun nonaktif ditolak. Dibatasi 5 percobaan per menit per username dan IP.
+     * Login dengan username_nip (PRD 8). Respons gagal menyertakan sisa percobaan (contoh 3/5).
+     * Setelah 5 kali gagal berturut-turut akun terkunci sampai dibuka Super Admin, walaupun
+     * kata sandi berikutnya benar. Tetap dibatasi 5 percobaan per menit per username dan IP.
      *
      * @throws ValidationException
      */
     public function authenticate(): void
     {
-        $this->ensureIsNotRateLimited();
-
         $kredensial = [
             'username_nip' => trim((string) $this->input('login')),
             'password' => (string) $this->input('password'),
         ];
+        /** @var User|null $user */
+        $user = Auth::getProvider()->retrieveByCredentials(['username_nip' => $kredensial['username_nip']]);
 
-        if (! Auth::validate($kredensial)) {
-            RateLimiter::hit($this->throttleKey(), 60);
-
-            throw ValidationException::withMessages([
-                'login' => 'Username/NIP atau kata sandi tidak sesuai.',
-            ]);
+        if ($user?->terkunci()) {
+            throw ValidationException::withMessages(['login' => self::pesanTerkunci()]);
         }
+        $this->ensureIsNotRateLimited();
 
-        $user = Auth::getProvider()->retrieveByCredentials($kredensial);
+        if (! $user || ! Auth::getProvider()->validateCredentials($user, $kredensial)) {
+            RateLimiter::hit($this->throttleKey(), 60);
+            $pesan = 'NIP atau kata sandi tidak cocok.';
+
+            if ($user) {
+                $gagal = $user->gagal_login + 1;
+                $terkunci = $gagal >= User::MAKS_GAGAL_LOGIN;
+                $user->forceFill(['gagal_login' => $gagal, 'terkunci_at' => $terkunci ? now() : null])->saveQuietly();
+                if ($terkunci) {
+                    Audit::catat(Audit::LOCK_USER, $user, null, ['gagal_login' => $gagal], $user->id);
+
+                    throw ValidationException::withMessages(['login' => self::pesanTerkunci()]);
+                }
+                $pesan .= ' Sisa percobaan: '.(User::MAKS_GAGAL_LOGIN - $gagal).'/'.User::MAKS_GAGAL_LOGIN;
+            }
+
+            throw ValidationException::withMessages(['login' => $pesan]);
+        }
 
         if (! $user->is_active) {
-            throw ValidationException::withMessages([
-                'login' => 'Akun Anda dinonaktifkan. Hubungi Super Admin.',
-            ]);
+            throw ValidationException::withMessages(['login' => 'Akun Anda dinonaktifkan. Hubungi Super Admin.']);
         }
 
-        Auth::login($user, $this->boolean('remember'));
-
+        $user->forceFill(['gagal_login' => 0])->saveQuietly();
+        Auth::login($user);
         RateLimiter::clear($this->throttleKey());
+    }
+
+    public static function pesanTerkunci(): string
+    {
+        return 'Akun terkunci setelah '.User::MAKS_GAGAL_LOGIN.' kali gagal masuk. Hubungi Super Admin untuk membukanya.';
     }
 
     /**
@@ -76,7 +96,7 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), self::MAX_PERCOBAAN)) {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), self::MAX_PERCOBAAN_PER_MENIT)) {
             return;
         }
 

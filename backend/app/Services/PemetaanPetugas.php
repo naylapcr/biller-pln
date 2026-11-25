@@ -44,4 +44,12 @@ class PemetaanPetugas
     {
         return $kode === null ? null : ($this->kode[strtoupper($kode)] ?? null);
     }
+
+    /** Pemilik KODE RBM (kode petugas = huruf ke-4 sampai ke-6), atau PETUGAS bila kode belum terdaftar. */
+    public function pemilikRbm(?string $kodeRbm, ?string $petugasLogin): ?int
+    {
+        $kode = strlen((string) $kodeRbm) >= 6 ? substr((string) $kodeRbm, 3, 3) : null;
+
+        return $this->billerId($this->loginDariKode($kode)) ?? $this->billerId($petugasLogin);
+    }
 }

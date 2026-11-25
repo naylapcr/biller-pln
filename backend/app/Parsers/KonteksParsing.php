@@ -2,6 +2,8 @@
 
 namespace App\Parsers;
 
+use App\Models\Period;
+use App\Services\ParameterSkor;
 use App\Services\PemetaanPetugas;
 
 /** Data yang dibutuhkan parser selain isi berkas. */
@@ -15,6 +17,7 @@ class KonteksParsing
         public readonly string $unitup,
         public readonly PemetaanPetugas $petugas,
         public readonly array $wilayah,
+        public readonly float $toleransiKwh = 1.0,
     ) {}
 
     public static function untuk(string $periode): self
@@ -24,6 +27,7 @@ class KonteksParsing
             (string) config('sipermon.unitup'),
             PemetaanPetugas::muat(),
             config('sipermon.wilayah'),
+            (float) (($p = Period::kode($periode)) ? app(ParameterSkor::class)->untuk($p)['toleransi_kwh'] : config('sipermon.parameter.toleransi_kwh')),
         );
     }
 

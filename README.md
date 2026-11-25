@@ -1,17 +1,17 @@
 # SIPERMON · Kinerja Biller
 
-Website rekap kinerja 25 biller ULP Kota Barat. Koordinator Admin mengunggah ekspor rekap ACMT (dan nanti AP2T). Sistem mengurai dan memvalidasi berkas, lalu setelah di-commit menghitung skor bulanan, dashboard, dan leaderboard. Biller hanya mengisi absensi hariannya sendiri; selebihnya mereka membaca skor, rincian poin, denda, dan peringkat miliknya.
+Website rekap kinerja 25 biller ULP Kota Barat. Koordinator Admin mengunggah ekspor rekap ACMT (dan nanti AP2T). Sistem mengurai dan memvalidasi berkas, lalu setelah di-commit menghitung skor bulanan, dashboard, dan leaderboard. Biller dan Koordinator absen harian sendiri; selebihnya Biller membaca skor, rincian, histori WO, dan peringkat miliknya.
 
 Acuan: *PRD Backend SIPERMON — Kinerja Biller (Upload ACMT/AP2T)*, 17 Nov 2026.
 
-Stack: Laravel 12, Inertia 2 + React 19 + TypeScript, Tailwind v4. Basis data: PostgreSQL (Supabase) untuk produksi; MySQL atau SQLite juga jalan untuk pengembangan.
+Stack: Laravel 12, Inertia 2 + React 19 + TypeScript, Tailwind v4. Basis data dan berkas unggahan: Supabase (PostgreSQL + Storage). Tes memakai SQLite.
 
 ## Struktur folder
 
 ```
 biller-pln/
 ├── backend/    Laravel: app, routes, config, database, tests, public, resources/views
-└── frontend/   React + TypeScript + Vite: src/ (Pages, Components, Layouts, hooks, lib)
+└── frontend/   React + TypeScript + Vite: src/ (assets, components, layouts, pages, hooks, lib, types)
 ```
 
 Frontend tetap dirender lewat Inertia. Vite berjalan dari `frontend/`, membaca `backend/.env`, dan menulis hasil build ke `backend/public/build` (mode dev: `backend/public/hot`).
@@ -35,7 +35,11 @@ composer dev                # server + queue worker + vite (frontend)
 
 Parsing berkas berjalan di antrean, jadi **queue worker harus hidup**. `composer dev` sudah menjalankannya. Kalau memakai `php artisan serve` saja, jalankan juga `php artisan queue:work` di terminal lain. Tanpa worker, batch akan tertahan di status "Sedang diproses".
 
-PHP butuh ekstensi `zip` dan `gd`.
+PHP butuh ekstensi `zip`, `gd`, serta `pdo_pgsql` dan `pgsql` untuk Supabase (hapus tanda `;` di `php.ini` Laragon).
+
+`.env` yang dibaca Laravel ada di `backend/.env`. Untuk Supabase Storage (`SIPERMON_UPLOAD_DISK=s3`) pasang paketnya sekali: `composer require league/flysystem-aws-s3-v3`. Tanpa Supabase, pakai `SIPERMON_UPLOAD_DISK=unggahan` dan `FILESYSTEM_DISK=local`.
+
+Scheduler (`php artisan schedule:work`) harus hidup agar `MarkAbsentJob` mencatat alpa pukul 23.59 WIB.
 
 ## Akun demo (kata sandi: `password`)
 
@@ -61,53 +65,41 @@ Satu berkas dengan beberapa sheet menghasilkan satu batch per modul. Commit untu
 
 ## Alur
 
-1. Unggah berkas (.xlsx/.xls/.csv, maks 20 MB). Berkas asli disimpan di disk `unggahan` beserta checksum SHA-256.
-2. `ParseUploadJob` mengenali sheet dari judul dan header, lalu membacanya per potongan (sheet Prabayar 9.084 baris ±25 detik).
-3. Validasi per baris menghasilkan error, warning, dan info. Batch dengan error berstatus **gagal**; batch bersih berstatus **siap commit**.
-4. Koordinator memeriksa pratinjau, lalu commit atau batal. Commit menulis tabel final dalam satu transaksi, mengisi ulang `work_orders`, dan menghitung ulang `monthly_scores`.
-5. Rollback (periode terbuka) menghapus data batch dan memulihkan batch yang digantikannya dari berkas aslinya.
-6. Super Admin menutup periode. Syaratnya semua parameter wajib terisi; skor final lalu dikunci.
+1. Koordinator mengunggah berkas (.xlsx/.csv, maks 25 MB). Berkas asli disimpan privat beserta checksum SHA-256.
+2. `ParseUploadJob` mengenali sheet dari judul dan header, lalu membacanya per potongan ke staging.
+3. Validasi menghasilkan error, warning, dan info. Batch dengan error ditolak; batch bersih menunggu commit.
+4. Commit menulis tabel final dalam satu transaksi, mengganti batch lama modul yang sama, dan menghitung ulang skor.
+5. Rollback (periode terbuka) menghapus data batch dan memulihkan batch yang digantikannya.
+6. Super Admin menutup periode dengan mengetik kode periode; skor final dikunci.
 
-Modul yang sudah punya parser: Pascabayar Tunggal, Pascabayar Ganda Industri, Baca Ulang Pascabayar, dan Prabayar. Tabel untuk Koreksi AP2T, Invoice, dan PDIL sudah ada; parsernya dibuat setelah contoh berkasnya diterima.
+Unggah, commit, dan rollback khusus Koordinator. Super Admin mendapat 403 di `/biller`, `/unggah`, `/pemetaan`, `/absensi`, dan `/laporan`.
 
 ## Absensi
 
-Biller mengisi absensinya sendiri setiap hari di menu **Absensi**: hadir, izin, atau sakit (izin dan sakit wajib diberi keterangan). Aturannya:
-
-- Hari kerja yang sudah lewat tanpa absensi dihitung **alpa**. Hari ini baru dihitung alpa setelah harinya berakhir.
-- Skor periode terbuka dihitung ulang setiap hari pukul 00.15 WIB, dan setiap kali ada absensi masuk.
-- Koordinator Admin melihat rekap semua biller di **Absensi biller**. Koordinator bisa mengisi atau mengoreksi absensi tanggal mana pun, termasuk menandai alpa. Absensi yang diisi koordinator tidak bisa ditimpa biller.
-- Super Admin mengatur per periode, di **Periode & parameter**:
-  - rentang tanggal yang dinilai (bawaan: bulan kalender BLTH, misalnya 202611 = 1–30 November);
-  - hari kerja (bawaan Senin–Sabtu);
-  - tanggal libur;
-  - denda per hari alpa (bawaan 0).
-
-```
-Skor Akhir = … − Denda_Absensi,   Denda_Absensi = hari alpa × denda_alpa_per_hari
-```
+Biller dan Koordinator absen sekali sehari (hadir, izin, sakit); absen kedua ditolak 409. Absensi **tidak memengaruhi skor**. Koordinator hanya memantau; koreksi dilakukan Super Admin dengan alasan wajib. Hari kerja (Senin–Sabtu) diatur di `config/sipermon.php` sambil menunggu pertanyaan terbuka no. 8.
 
 ## Rumus skor (PRD 6.1)
 
 ```
-Skor Akhir = Agregat(Σ Poin_m) + Bonus_J − Denda_AP2T − Denda_BU
-Poin_m     = StanValid_m × w_stan + Eviden_m × w_eviden
+Skor Akhir  = rata-rata nilai modul yang punya data + Bonus_J
+Nilai_pasca = (0,4 R + 0,3 E + 0,3 K) x (1 - rasio Baca Ulang) x (1 - rasio AP2T)
+Nilai_pra   = (R + E) / 2
+Bonus_J     = 5,0 x TERBACA_J / JMLPLG_J
 ```
 
-Semua angka (bobot, bonus, denda, KDBACA normal, ambang) disimpan per periode di `scoring_rules` dan diatur Super Admin di **Periode & parameter**. `bonus_dasar_j` dan `poin_per_plg_j` belum ditetapkan, jadi bonus Hari J dihitung 0 dan periode belum bisa ditutup sampai keduanya diisi.
-
-Kasus Baca Ulang terbukti salah memakai aturan usulan PRD 6.3: stan BU < stan awal, atau kenaikan > daya (kVA) × jam di antara dua pembacaan.
+Semua parameter disimpan per periode dan diatur Super Admin di **Periode & Parameter**. Kasus Baca Ulang dibebankan ke pemilik KODE RBM; kasus sisipan tidak memotong skor.
 
 ```bash
 php artisan sipermon:hitung 202611     # hitung ulang manual
+php artisan sipermon:alpa 2026-11-24   # catat alpa satu tanggal secara manual
 ```
 
 ## Penyimpangan dari PRD yang perlu diketahui
 
-- **Kunci unik `reread_cases`** memakai IDPEL + TGLBACA + TGLBACA BU, bukan IDPEL + TGLBACA. Berkas 202611 punya 3 pasang baris dengan IDPEL dan TGLBACA sama tetapi TGLBACA BU berbeda.
-- **Jam di antara dua pembacaan = 0 dan stan naik** dihitung *salah lebih* (batas 0 kWh). Dengan cara ini hasilnya cocok dengan angka PRD (213 / 554 / 197 / 32).
-- **Supabase Storage** belum dipasang. Berkas asli disimpan di disk lokal privat `storage/app/private/unggahan`. Untuk Supabase, tambahkan disk S3 (butuh paket `league/flysystem-aws-s3-v3`) lalu isi `SIPERMON_UPLOAD_DISK`.
-- **Row Level Security** dan indeks "satu batch committed per periode + modul" hanya dibuat otomatis bila migrasi dijalankan di PostgreSQL.
+- **Kunci unik `reread_cases`** memakai IDPEL + TGLBACA + TGLBACA BU. Berkas 202611 punya 3 pasang baris dengan IDPEL dan TGLBACA sama tetapi TGLBACA BU berbeda.
+- **Jendela sisipan** memakai jam mulai–selesai per KODE RBM dengan toleransi 5 menit (`toleransi_sisipan_menit`). Angka 5 menit tidak ada di PRD; dipilih karena menghasilkan 19 sisipan dan 750 kasus sesuai kriteria terima.
+- **Endpoint** berupa aksi controller Inertia, bukan JSON `/api` (diizinkan PRD 8).
+- **Row Level Security** dan indeks `lower(login_acmt)` hanya dibuat bila migrasi dijalankan di PostgreSQL.
 
 ## Tes
 

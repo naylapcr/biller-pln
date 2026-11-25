@@ -12,36 +12,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /** Periode penilaian = BLTH (bulan tahun rekening), bukan bulan tanggal baca. */
 class Period extends Model
 {
-    protected $fillable = ['kode', 'status', 'absensi_mulai', 'absensi_selesai', 'ditutup_at', 'ditutup_oleh'];
+    protected $fillable = ['kode', 'status', 'ditutup_at', 'ditutup_oleh'];
 
     protected function casts(): array
     {
         return [
             'status' => StatusPeriode::class,
-            'absensi_mulai' => 'immutable_date',
-            'absensi_selesai' => 'immutable_date',
             'ditutup_at' => 'datetime',
         ];
-    }
-
-    protected static function booted(): void
-    {
-        // Rentang absensi bawaan: bulan kalender BLTH (202611 → 1–30 November 2026).
-        static::creating(function (Period $p) {
-            $awal = CarbonImmutable::createFromFormat('Ym', $p->kode)->startOfMonth();
-            $p->absensi_mulai ??= $awal;
-            $p->absensi_selesai ??= $awal->endOfMonth();
-        });
-    }
-
-    /** Periode terbuka yang rentang absensinya mencakup tanggal ini. */
-    public static function untukTanggal(CarbonImmutable $tanggal): ?self
-    {
-        return static::query()->terbuka()
-            ->whereDate('absensi_mulai', '<=', $tanggal->toDateString())
-            ->whereDate('absensi_selesai', '>=', $tanggal->toDateString())
-            ->orderByDesc('kode')
-            ->first();
     }
 
     public function scopeTerbuka(Builder $query): void
@@ -57,7 +35,13 @@ class Period extends Model
     /** "202611" → "November 2026". */
     public function nama(): string
     {
-        return CarbonImmutable::createFromFormat('Ym', $this->kode)->startOfMonth()->locale('id')->translatedFormat('F Y');
+        return $this->awalBulan()->locale('id')->translatedFormat('F Y');
+    }
+
+    /** Tanggal 1 bulan BLTH, contoh 202611 → 1 November 2026. */
+    public function awalBulan(): CarbonImmutable
+    {
+        return CarbonImmutable::createFromFormat('Ym', $this->kode, config('app.timezone'))->startOfMonth();
     }
 
     public static function kode(string $kode): ?self

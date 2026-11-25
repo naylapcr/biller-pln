@@ -4,7 +4,7 @@ use App\Http\Controllers\AbsensiController;
 use App\Http\Controllers\AbsensiSayaController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\KinerjaBillerController;
+use App\Http\Controllers\DirektoriBillerController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\PemetaanController;
 use App\Http\Controllers\Pengaturan;
@@ -12,6 +12,11 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SayaController;
 use App\Http\Controllers\UnggahController;
 use Illuminate\Support\Facades\Route;
+
+/*
+ * Rute per peran mengikuti desain (PRD 10.1–10.2). Super Admin tidak membuka halaman
+ * operasional Koordinator: /biller, /unggah, /pemetaan, /absensi, dan /laporan membalas 403.
+ */
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
@@ -26,55 +31,70 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profil', [ProfileController::class, 'update'])->name('profil.update');
     Route::put('/profil/password', [ProfileController::class, 'updatePassword'])->name('profil.password');
 
-    // Biller: hanya membaca skor, rincian, denda, dan peringkat miliknya.
-    Route::middleware('role:biller')->group(function () {
-        Route::redirect('/saya', '/saya/skor');
-        Route::get('/saya/skor', SayaController::class)->name('saya.skor');
-        Route::get('/saya/absensi', [AbsensiSayaController::class, 'index'])->name('saya.absensi');
-        Route::post('/saya/absensi', [AbsensiSayaController::class, 'store'])->middleware('throttle:20,1')->name('saya.absensi.store');
+    // Biller: hanya membaca skor, rincian, histori, dan peringkat miliknya; absen harian sendiri.
+    Route::middleware('role:biller')->prefix('saya')->name('saya.')->group(function () {
+        Route::redirect('/', '/saya/skor');
+        Route::get('/skor', [SayaController::class, 'skor'])->name('skor');
+        Route::get('/absensi', [AbsensiSayaController::class, 'index'])->name('absensi');
+        Route::post('/absensi', [AbsensiSayaController::class, 'store'])->middleware('throttle:20,1')->name('absensi.store');
+        Route::get('/histori-wo', [SayaController::class, 'historiWo'])->name('histori-wo');
+        Route::get('/leaderboard', [SayaController::class, 'leaderboard'])->name('leaderboard');
     });
 
-    // Koordinator Admin & Super Admin.
-    Route::middleware('role:admin,super_admin')->group(function () {
-        Route::get('/dashboard', DashboardController::class)->name('dashboard');
-        Route::get('/biller', KinerjaBillerController::class)->name('biller.index');
+    // Dashboard: Koordinator → Dashboard Monitoring, Super Admin → Dashboard Sistem.
+    Route::get('/dashboard', DashboardController::class)->middleware('role:admin,super_admin')->name('dashboard');
+
+    // Koordinator Admin: unggah, commit, rollback, pemetaan (baca), absensi, dan laporan.
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/biller', DirektoriBillerController::class)->name('biller.index');
 
         Route::get('/unggah', [UnggahController::class, 'index'])->name('unggah.index');
         Route::post('/unggah', [UnggahController::class, 'store'])->middleware('throttle:20,1')->name('unggah.store');
+        Route::get('/unggah/template', [UnggahController::class, 'template'])->name('unggah.template');
         Route::get('/unggah/{batch}', [UnggahController::class, 'show'])->whereUuid('batch')->name('unggah.show');
         Route::get('/unggah/{batch}/status', [UnggahController::class, 'status'])->whereUuid('batch')->name('unggah.status');
+        Route::get('/unggah/{batch}/issues', [UnggahController::class, 'issues'])->whereUuid('batch')->name('unggah.issues');
+        Route::get('/unggah/{batch}/berkas', [UnggahController::class, 'berkas'])->whereUuid('batch')->name('unggah.berkas');
         Route::post('/unggah/{batch}/commit', [UnggahController::class, 'commit'])->whereUuid('batch')->name('unggah.commit');
         Route::post('/unggah/{batch}/rollback', [UnggahController::class, 'rollback'])->whereUuid('batch')->name('unggah.rollback');
         Route::delete('/unggah/{batch}', [UnggahController::class, 'destroy'])->whereUuid('batch')->name('unggah.destroy');
 
         Route::get('/pemetaan', [PemetaanController::class, 'index'])->name('pemetaan.index');
 
+        Route::get('/absensi/saya', [AbsensiSayaController::class, 'index'])->name('absensi.saya');
+        Route::post('/absensi/saya', [AbsensiSayaController::class, 'store'])->middleware('throttle:20,1')->name('absensi.saya.store');
         Route::get('/absensi', [AbsensiController::class, 'index'])->name('absensi.index');
-        Route::put('/absensi/{biller}', [AbsensiController::class, 'update'])->whereNumber('biller')->name('absensi.update');
 
         Route::get('/laporan', [LaporanController::class, 'index'])->name('laporan.index');
         Route::get('/laporan/{kode}.{format}', [LaporanController::class, 'unduh'])
             ->where(['kode' => '\d{6}', 'format' => 'xlsx|pdf'])->name('laporan.unduh');
     });
 
-    // Super Admin: akun, master biller, alias, periode & parameter, audit.
-    Route::middleware('role:super_admin')->group(function () {
-        Route::post('/pemetaan', [PemetaanController::class, 'store'])->name('pemetaan.store');
+    // Super Admin: akun, master biller, pemetaan alias, periode & parameter, koreksi absensi, audit.
+    Route::middleware('role:super_admin')->prefix('pengaturan')->name('pengaturan.')->group(function () {
+        Route::resource('users', Pengaturan\UserController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::post('users/{user}/unlock', [Pengaturan\UserController::class, 'unlock'])->name('users.unlock');
 
-        Route::prefix('pengaturan')->name('pengaturan.')->group(function () {
-            Route::resource('users', Pengaturan\UserController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::resource('billers', Pengaturan\BillerController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::delete('alias/{alias}', [Pengaturan\BillerController::class, 'hapusAlias'])->name('alias.destroy');
 
-            Route::resource('billers', Pengaturan\BillerController::class)->only(['index', 'store', 'update', 'destroy']);
-            Route::delete('alias/{alias}', [Pengaturan\BillerController::class, 'hapusAlias'])->name('alias.destroy');
+        Route::get('pemetaan', [PemetaanController::class, 'alias'])->name('pemetaan.index');
+        Route::post('pemetaan', [PemetaanController::class, 'store'])->name('pemetaan.store');
 
-            Route::get('periode', [Pengaturan\PeriodeController::class, 'index'])->name('periode.index');
-            Route::post('periode', [Pengaturan\PeriodeController::class, 'store'])->name('periode.store');
-            Route::get('periode/{kode}', [Pengaturan\PeriodeController::class, 'show'])->where('kode', '\d{6}')->name('periode.show');
-            Route::put('periode/{kode}/rules', [Pengaturan\PeriodeController::class, 'updateRules'])->where('kode', '\d{6}')->name('periode.rules');
-            Route::post('periode/{kode}/recalculate', [Pengaturan\PeriodeController::class, 'recalculate'])->where('kode', '\d{6}')->name('periode.recalculate');
-            Route::post('periode/{kode}/close', [Pengaturan\PeriodeController::class, 'close'])->where('kode', '\d{6}')->name('periode.close');
+        Route::get('periode', [Pengaturan\PeriodeController::class, 'index'])->name('periode.index');
+        Route::post('periode', [Pengaturan\PeriodeController::class, 'store'])->name('periode.store');
+        Route::put('periode/{kode}/rules', [Pengaturan\PeriodeController::class, 'updateRules'])->where('kode', '\d{6}')->name('periode.rules');
+        Route::post('periode/{kode}/recalculate', [Pengaturan\PeriodeController::class, 'recalculate'])->where('kode', '\d{6}')->name('periode.recalculate');
+        Route::post('periode/{kode}/close', [Pengaturan\PeriodeController::class, 'close'])->where('kode', '\d{6}')->name('periode.close');
 
-            Route::get('audit', Pengaturan\AuditController::class)->name('audit.index');
-        });
+        Route::get('koreksi-absensi', [Pengaturan\KoreksiAbsensiController::class, 'index'])->name('koreksi-absensi.index');
+        Route::post('koreksi-absensi', [Pengaturan\KoreksiAbsensiController::class, 'store'])->name('koreksi-absensi.store');
+
+        // Arsip resmi periode final (04.2).
+        Route::get('periode/{kode}/laporan.{format}', [LaporanController::class, 'unduhFinal'])
+            ->where(['kode' => '\d{6}', 'format' => 'xlsx|pdf'])->name('periode.unduh');
+
+        Route::get('audit', [Pengaturan\AuditController::class, 'index'])->name('audit.index');
+        Route::get('audit/csv', [Pengaturan\AuditController::class, 'csv'])->name('audit.csv');
     });
 });

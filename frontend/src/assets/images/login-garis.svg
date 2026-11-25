@@ -1,0 +1,10 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="172.939" height="832.601" viewBox="0 0 172.939 832.601" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path id="Edge Glow Line" d="M171.47 0.300286L1.46964 832.3" stroke-width="3" stroke="url(#paint0_linear_0_23)"/>
+<defs>
+<linearGradient id="paint0_linear_0_23" x1="86.4696" y1="0.300286" x2="86.4696" y2="832.3" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4DCCFF" stop-opacity="0.9"/>
+<stop offset="0.45" stop-color="#FAD933"/>
+<stop offset="1" stop-color="#4DCCFF" stop-opacity="0.4"/>
+</linearGradient>
+</defs>
+</svg>

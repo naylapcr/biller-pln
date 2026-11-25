@@ -26,8 +26,8 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerate();
 
         $user = $request->user();
-        $user->forceFill(['last_login_at' => now()])->saveQuietly();
-        Audit::catat('login', $user, null, null, $user->id);
+        $user->forceFill(['last_login_at' => now(), 'gagal_login' => 0])->saveQuietly();
+        Audit::catat(Audit::LOGIN, $user, null, null, $user->id);
 
         // Biller → skor saya, Koordinator Admin & Super Admin → dashboard.
         return redirect()->route($user->role->homeRoute());

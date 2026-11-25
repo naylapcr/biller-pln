@@ -46,7 +46,8 @@ class PenulisFakta
                 'selesai_at' => self::waktu($d['selesai_at']),
                 'durasi_detik' => $d['durasi_detik'],
             ]],
-            Modul::BacaUlang => ['reread_cases', fn (array $d) => $dasar($d) + [
+            // Kasus Baca Ulang dibebankan ke pemilik KODE RBM (pembaca pertama), bukan ke kolom PETUGAS.
+            Modul::BacaUlang => ['reread_cases', fn (array $d) => ['biller_id' => $petugas->pemilikRbm($d['kode_rbm'], $d['petugas_login'])] + $dasar($d) + [
                 'idpel' => $d['idpel'],
                 'tarif' => $d['tarif'],
                 'daya_va' => $d['daya_va'],
@@ -61,6 +62,7 @@ class PenulisFakta
                 'status_bu' => $d['status_bu'],
                 'batas_kwh' => $d['batas_kwh'],
                 'hasil' => $d['hasil'],
+                'sisipan' => false, // dinilai saat hitung skor dari jendela hari baca RBM
             ]],
             Modul::Prabayar => ['prepaid_inspections', fn (array $d) => $dasar($d) + [
                 'idpel' => $d['idpel'],
@@ -124,8 +126,7 @@ class PenulisFakta
                     'sumber' => SumberKoreksi::BacaUlang->value,
                     'stan_awal' => $k->stan_awal,
                     'stan_benar' => $k->stan_bu,
-                    'tingkat' => null,
-                    'denda_poin' => 0, // diisi saat hitung skor dari parameter denda_bu_per_kasus
+                    'penyebab' => 'biller',
                     'reread_case_id' => $k->id,
                     'batch_id' => $batch->id,
                     'catatan' => HasilBacaUlang::from($k->hasil)->label(),
@@ -139,7 +140,7 @@ class PenulisFakta
     public function hapus(UploadBatch $batch): void
     {
         DB::table('corrections')->where('batch_id', $batch->id)->delete();
-        foreach (['reread_cases', 'reading_logs', 'prepaid_inspections', 'attendance'] as $tabel) {
+        foreach (['reread_cases', 'reading_logs', 'prepaid_inspections'] as $tabel) {
             DB::table($tabel)->where('batch_id', $batch->id)->delete();
         }
     }

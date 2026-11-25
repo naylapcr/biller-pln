@@ -6,12 +6,12 @@ use App\Enums\SumberKoreksi;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Kasus denda: dari Baca Ulang yang terbukti salah (BU) atau dari Koreksi AP2T. */
+/** Kasus kesalahan: Baca Ulang terbukti salah (BU) atau Koreksi AP2T. Hanya penyebab = biller yang masuk rasio. */
 class Correction extends Model
 {
     protected $fillable = [
-        'biller_id', 'period_id', 'petugas_login', 'idpel', 'sumber', 'stan_awal', 'stan_benar', 'tingkat',
-        'denda_poin', 'reread_case_id', 'batch_id', 'catatan',
+        'biller_id', 'period_id', 'petugas_login', 'idpel', 'sumber', 'penyebab', 'stan_awal', 'stan_benar',
+        'reread_case_id', 'batch_id', 'catatan',
     ];
 
     protected function casts(): array
@@ -20,7 +20,6 @@ class Correction extends Model
             'sumber' => SumberKoreksi::class,
             'stan_awal' => 'float',
             'stan_benar' => 'float',
-            'denda_poin' => 'float',
         ];
     }
 

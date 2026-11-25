@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Parameter skor per periode (tabel scoring_rules). Periode baru menyalin dari periode
+ * Parameter skor per periode (tabel scoring_rules, PRD 6.3). Periode baru menyalin dari periode
  * sebelumnya; periode pertama memakai nilai bawaan di config/sipermon.php.
  */
 class ParameterSkor
@@ -50,8 +50,36 @@ class ParameterSkor
 
         return array_values(array_filter(
             config('sipermon.parameter_wajib'),
-            fn (string $k) => $nilai[$k] === null || $nilai[$k] === '' || $nilai[$k] === [],
+            fn (string $k) => ! array_key_exists($k, $nilai) || $nilai[$k] === null || $nilai[$k] === '' || $nilai[$k] === [],
         ));
+    }
+
+    /**
+     * Masalah parameter yang memblokir tutup periode: wajib kosong, bobot pascabayar tidak 100%,
+     * atau ambang kategori terbalik.
+     *
+     * @return list<string>
+     */
+    public function masalah(Period $periode): array
+    {
+        $kosong = $this->kosongWajib($periode);
+        if ($kosong) {
+            return ['Parameter wajib belum diisi: '.implode(', ', $kosong).'.'];
+        }
+        $p = $this->untuk($periode);
+        $masalah = [];
+        $bobot = (float) $p['w_realisasi'] + (float) $p['w_eviden'] + (float) $p['w_kecepatan'];
+        if (abs($bobot - 100) > 0.01) {
+            $masalah[] = "Bobot pascabayar berjumlah {$bobot}%, harus 100%.";
+        }
+        if ((float) $p['bobot_bonus_j'] < 0) {
+            $masalah[] = 'Bobot bonus Hari J tidak boleh negatif.';
+        }
+        if ((float) $p['ambang_kritis'] >= (float) $p['ambang_grade_a']) {
+            $masalah[] = 'Ambang Kritis harus lebih kecil dari ambang Grade A.';
+        }
+
+        return $masalah;
     }
 
     /**
@@ -79,7 +107,7 @@ class ParameterSkor
         });
 
         if ($berubah) {
-            Audit::catat('ubah_parameter', $periode, array_intersect_key($sebelum, $berubah), $berubah, $oleh->id);
+            Audit::catat(Audit::UPDATE_RULE, $periode, array_intersect_key($sebelum, $berubah), $berubah, $oleh->id);
             app(PenghitungSkor::class)->hitung($periode);
         }
     }

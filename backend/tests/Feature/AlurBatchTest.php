@@ -45,7 +45,7 @@ test('pratinjau menampilkan ringkasan, issue, dan baris staging', function () {
 
     $this->actingAs($this->admin)->get("/unggah/{$batch->id}")
         ->assertOk()
-        ->assertInertia(fn (Assert $p) => $p->component('Unggah/Show')
+        ->assertInertia(fn (Assert $p) => $p->component('Koordinator/DetailBatch')
             ->where('batch.status', 'siap_commit')
             ->where('batch.bisa.commit', true)
             ->has('staging.data')
@@ -97,7 +97,7 @@ test('rollback mengembalikan tabel final dan skor ke keadaan sebelum commit', fu
         ->and(MonthlyScore::orderBy('biller_id')->pluck('final_score', 'biller_id')->all())->toBe($skorAwal);
 });
 
-test('berkas yang sama diunggah dua kali ditolak DUPLICATE_FILE', function () {
+test('berkas yang sama diunggah dua kali ditolak DUPLICATE_FILE_HASH', function () {
     $isi = fn ($c) => $c->tunggal();
     $path = sys_get_temp_dir().'/sipermon-dup.xlsx';
     $isi(new ContohBerkasAcmt(petugasKecil()))->simpan($path);
@@ -108,7 +108,7 @@ test('berkas yang sama diunggah dua kali ditolak DUPLICATE_FILE', function () {
     $kedua = unggah($this, $berkas(), 'pascabayar_tunggal');
 
     expect($kedua->status)->toBe(StatusBatch::Gagal)
-        ->and($kedua->issues()->where('kode', 'DUPLICATE_FILE')->exists())->toBeTrue();
+        ->and($kedua->issues()->where('kode', 'DUPLICATE_FILE_HASH')->exists())->toBeTrue();
 });
 
 test('berkas dengan BLTH berbeda ditolak PERIODE_MISMATCH dan UNITUP lain ditolak UNIT_MISMATCH', function () {
@@ -156,7 +156,7 @@ test('berkas tanpa sheet yang dikenali gagal dengan HEADER_MISMATCH', function (
         ->and($batch->issues()->where('kode', 'HEADER_MISMATCH')->exists())->toBeTrue();
 });
 
-test('berkas selain xlsx, xls, csv ditolak', function () {
+test('berkas selain xlsx dan csv ditolak', function () {
     $this->actingAs($this->admin)->post('/unggah', [
         'file' => UploadedFile::fake()->create('rekap.pdf', 10),
         'periode' => '202611',

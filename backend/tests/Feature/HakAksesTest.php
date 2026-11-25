@@ -20,14 +20,27 @@ beforeEach(function () {
     $this->admin = User::factory()->create();
 });
 
-test('biller hanya melihat skor miliknya, dan leaderboard tanpa rincian denda orang lain', function () {
+test('biller hanya melihat skor miliknya, dan leaderboard hanya nama, sektor, dan peringkat', function () {
     $this->actingAs($this->akmal)->get('/saya/skor')
         ->assertOk()
-        ->assertInertia(fn (Assert $p) => $p->component('Saya/Skor')
-            ->where('skor.biller.login_acmt', '18111.akmal')
-            ->has('top.0', fn (Assert $baris) => $baris->hasAll(['biller_id', 'nama', 'kode_petugas', 'peringkat', 'final_score'])
-                ->missing('total_denda')->missing('login_acmt')));
+        ->assertInertia(fn (Assert $p) => $p->component('Biller/SkorSaya')->where('skor.biller.login_acmt', '18111.akmal'));
+
+    $this->actingAs($this->akmal)->get('/saya/leaderboard')
+        ->assertOk()
+        ->assertInertia(fn (Assert $p) => $p->component('Biller/Leaderboard')
+            ->has('top.0', fn (Assert $baris) => $baris->hasAll(['biller_id', 'nama', 'sektor', 'peringkat'])
+                ->missing('final_score')->missing('kategori')->missing('login_acmt')));
 });
+
+test('halaman Biller tampil', function (string $url, string $komponen) {
+    $this->actingAs($this->akmal)->get($url)->assertOk()->assertInertia(fn (Assert $p) => $p->component($komponen));
+})->with([
+    ['/saya/skor', 'Biller/SkorSaya'],
+    ['/saya/absensi', 'Biller/AbsensiSaya'],
+    ['/saya/histori-wo', 'Biller/HistoriWO'],
+    ['/saya/leaderboard', 'Biller/Leaderboard'],
+    ['/profil', 'Umum/Profil'],
+]);
 
 test('parameter URL tidak bisa dipakai biller untuk melihat biller lain', function () {
     $joni = Biller::where('login_acmt', '18111.joni')->value('id');
@@ -39,44 +52,67 @@ test('parameter URL tidak bisa dipakai biller untuk melihat biller lain', functi
 
 test('biller tidak bisa membuka dashboard, unggah, parameter, atau audit (403)', function (string $url) {
     $this->actingAs($this->akmal)->get($url)->assertForbidden();
-})->with(['/dashboard', '/biller', '/unggah', '/pemetaan', '/laporan', '/pengaturan/periode', '/pengaturan/audit', '/pengaturan/users']);
+})->with(['/dashboard', '/biller', '/unggah', '/pemetaan', '/absensi', '/laporan', '/pengaturan/periode', '/pengaturan/audit', '/pengaturan/users']);
 
-test('koordinator admin bisa unggah dan melihat rincian biller, tetapi tidak mengatur parameter atau audit', function () {
+test('halaman Koordinator tampil', function (string $url, string $komponen) {
+    $this->actingAs($this->admin)->get($url)->assertOk()->assertInertia(fn (Assert $p) => $p->component($komponen));
+})->with([
+    ['/dashboard', 'Koordinator/Dashboard'],
+    ['/biller', 'Koordinator/DirektoriBiller'],
+    ['/unggah', 'Koordinator/PortalUnggah'],
+    ['/pemetaan', 'Koordinator/PemetaanPetugas'],
+    ['/absensi/saya', 'Koordinator/AbsensiSaya'],
+    ['/absensi', 'Koordinator/MonitoringAbsensi'],
+    ['/laporan', 'Koordinator/Laporan'],
+    ['/profil', 'Umum/Profil'],
+]);
+
+test('koordinator melihat rincian biller tetapi tidak bisa mengatur parameter, alias, atau audit', function () {
     $joni = Biller::where('login_acmt', '18111.joni')->value('id');
 
-    $this->actingAs($this->admin)->get('/dashboard')->assertOk()->assertInertia(fn (Assert $p) => $p->component('Dashboard/Index')->has('top', 3));
+    $this->actingAs($this->admin)->get('/dashboard')->assertInertia(fn (Assert $p) => $p->has('top', 3));
     $this->actingAs($this->admin)->get("/biller?detail={$joni}")->assertOk()
-        ->assertInertia(fn (Assert $p) => $p->where('detail.skor.biller.login_acmt', '18111.joni'));
-    $this->actingAs($this->admin)->get('/unggah')->assertOk();
+        ->assertInertia(fn (Assert $p) => $p->where('detail.skor.biller.login_acmt', '18111.joni')->has('detail.tren'));
 
     $this->actingAs($this->admin)->get('/pengaturan/periode')->assertForbidden();
     $this->actingAs($this->admin)->get('/pengaturan/audit')->assertForbidden();
-    $this->actingAs($this->admin)->post('/pemetaan', ['login_acmt' => 'x', 'biller_id' => $joni])->assertForbidden();
+    $this->actingAs($this->admin)->post('/pengaturan/pemetaan', ['login_acmt' => 'x', 'biller_id' => $joni])->assertForbidden();
 });
 
-test('semua halaman Super Admin tampil', function (string $url, string $komponen) {
+test('halaman Super Admin tampil', function (string $url, string $komponen) {
     $this->actingAs(superAdmin())->get($url)->assertOk()->assertInertia(fn (Assert $p) => $p->component($komponen));
 })->with([
-    ['/dashboard', 'Dashboard/Index'],
-    ['/biller', 'Biller/Index'],
-    ['/unggah', 'Unggah/Index'],
-    ['/pemetaan', 'Pemetaan/Index'],
-    ['/laporan', 'Laporan/Index'],
-    ['/pengaturan/users', 'Pengaturan/Users/Index'],
-    ['/pengaturan/billers', 'Pengaturan/Billers/Index'],
-    ['/pengaturan/periode', 'Pengaturan/Periode/Index'],
-    ['/pengaturan/periode/202611', 'Pengaturan/Periode/Show'],
-    ['/pengaturan/audit', 'Pengaturan/Audit/Index'],
+    ['/dashboard', 'SuperAdmin/DashboardSistem'],
+    ['/pengaturan/users', 'SuperAdmin/ManajemenAkun'],
+    ['/pengaturan/billers', 'SuperAdmin/MasterBiller'],
+    ['/pengaturan/pemetaan', 'SuperAdmin/PemetaanAlias'],
+    ['/pengaturan/periode', 'SuperAdmin/PeriodeParameter'],
+    ['/pengaturan/koreksi-absensi', 'SuperAdmin/KoreksiAbsensi'],
+    ['/pengaturan/audit', 'SuperAdmin/AuditTrail'],
+    ['/profil', 'Umum/Profil'],
 ]);
+
+test('Super Admin tidak membuka halaman operasional Koordinator (403)', function (string $url) {
+    $this->actingAs(superAdmin())->get($url)->assertForbidden();
+})->with(['/biller', '/unggah', '/pemetaan', '/absensi', '/absensi/saya', '/laporan']);
+
+test('Super Admin yang memanggil unggah, commit, atau rollback menerima 403', function () {
+    $batch = App\Models\UploadBatch::first();
+
+    $this->actingAs(superAdmin())->post('/unggah', [])->assertForbidden();
+    $this->actingAs(superAdmin())->post("/unggah/{$batch->id}/commit")->assertForbidden();
+    $this->actingAs(superAdmin())->post("/unggah/{$batch->id}/rollback")->assertForbidden();
+});
 
 test('laporan peringkat bisa diunduh sebagai Excel dan PDF', function () {
     $this->actingAs($this->admin)->get('/laporan/202611.xlsx')->assertOk()->assertDownload('peringkat-biller-202611.xlsx');
     $this->actingAs($this->admin)->get('/laporan/202611.pdf')->assertOk()->assertDownload('peringkat-biller-202611.pdf');
 });
 
-test('audit log tidak bisa diubah atau dihapus', function () {
+test('audit log memakai kode aksi PRD dan tidak bisa diubah atau dihapus', function () {
     $log = AuditLog::first();
 
-    expect(fn () => $log->update(['aksi' => 'x']))->toThrow(LogicException::class)
+    expect(AuditLog::where('aksi', 'COMMIT_BATCH')->exists())->toBeTrue()
+        ->and(fn () => $log->update(['aksi' => 'x']))->toThrow(LogicException::class)
         ->and(fn () => $log->delete())->toThrow(LogicException::class);
 });
