@@ -37,9 +37,28 @@ Parsing berkas berjalan di antrean, jadi **queue worker harus hidup**. `composer
 
 PHP butuh ekstensi `zip`, `gd`, serta `pdo_pgsql` dan `pgsql` untuk Supabase (hapus tanda `;` di `php.ini` Laragon).
 
-`.env` yang dibaca Laravel ada di `backend/.env`. Untuk Supabase Storage (`SIPERMON_UPLOAD_DISK=s3`) pasang paketnya sekali: `composer require league/flysystem-aws-s3-v3`. Tanpa Supabase, pakai `SIPERMON_UPLOAD_DISK=unggahan` dan `FILESYSTEM_DISK=local`.
+`.env` yang dibaca Laravel ada di `backend/.env`. Paket Supabase Storage (`league/flysystem-aws-s3-v3`) sudah ada di `composer.json`. Tanpa Supabase, pakai `DB_CONNECTION=sqlite`, `SIPERMON_UPLOAD_DISK=unggahan`, dan `FILESYSTEM_DISK=local`.
 
 Scheduler (`php artisan schedule:work`) harus hidup agar `MarkAbsentJob` mencatat alpa pukul 23.59 WIB.
+
+## Menyambungkan ke Supabase
+
+1. **Buat proyek** di supabase.com, region **Southeast Asia (Singapore)**. Simpan kata sandi database di pengelola kata sandi.
+2. **Database:** klik **Connect** → **Session pooler**. Salin host, port `5432`, database `postgres`, dan user `postgres.<project-ref>` ke `DB_*` di `backend/.env`. Jangan pakai port `6543` (transaction pooler): Laravel memakai prepared statement.
+3. **Storage:** menu **Storage** → **New bucket** bernama `acmt-uploads`, **Public bucket mati**.
+4. **Kunci S3:** **Project Settings → Storage → S3 Connection**. Salin endpoint ke `AWS_ENDPOINT`, region ke `AWS_DEFAULT_REGION`, lalu buat access key dan isi `AWS_ACCESS_KEY_ID` serta `AWS_SECRET_ACCESS_KEY`. Kunci ini melewati RLS Storage, jadi hanya disimpan di server.
+5. Di `backend/.env` set `DB_CONNECTION=pgsql`, `SIPERMON_UPLOAD_DISK=s3`, dan `AWS_USE_PATH_STYLE_ENDPOINT=true`.
+6. Jalankan dari folder `backend`:
+
+```bash
+php artisan config:clear
+php artisan sipermon:cek-supabase --tanpa-storage   # koneksi, SSL, zona waktu
+php artisan migrate --force                          # membuat tabel + RLS
+SIPERMON_DEMO=false php artisan db:seed --force      # akun awal + 25 biller, tanpa data demo
+php artisan sipermon:cek-supabase                    # ulangi: tabel, RLS, dan uji tulis/baca/hapus Storage
+```
+
+Migrasi mengaktifkan **Row Level Security tanpa kebijakan** di semua tabel, sehingga kunci publik Supabase (`anon`) tidak bisa membaca data lewat Data API. Aplikasi tetap bisa karena tersambung langsung sebagai pemilik tabel. Seeder membuat akun dengan kata sandi `password`: segera ganti lewat Profil Saya atau Manajemen Akun.
 
 ## Akun demo (kata sandi: `password`)
 

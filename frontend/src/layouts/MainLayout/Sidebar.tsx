@@ -2,7 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { Menu, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import petir from '@/assets/images/petir.svg';
+import LogoPln from '@/components/ui/LogoPln';
 import StatusChip from '@/components/ui/StatusChip';
 import UserAvatar from '@/components/ui/UserAvatar';
 import { useNavigation, type ResolvedNavGroup } from '@/hooks/useNavigation';
@@ -19,13 +19,9 @@ const PERAN: Record<Role, { label: string; tone: StatusTone; avatar: string }> =
 };
 
 function Brand() {
-    const { auth } = usePage<PageProps>().props;
-
     return (
         <Link href={route('home')} className="flex min-w-0 items-center gap-3 px-1">
-            <span className={cn('inline-flex size-10 shrink-0 items-center justify-center rounded-xl', auth.user.role === 'super_admin' ? 'bg-ink' : 'bg-pln-blue')}>
-                <img src={petir} alt="" width={20} height={20} />
-            </span>
+            <LogoPln />
             <span className="min-w-0">
                 <span className="block truncate text-[10px] leading-[13px] font-bold text-sky-ink">ULP KOTA BARAT</span>
                 <span className="block truncate text-[17px] leading-[21px] font-extrabold text-ink">Kinerja Biller</span>

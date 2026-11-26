@@ -1,13 +1,11 @@
-import petir from '@/assets/images/login-petir.svg';
+import LogoPln from '@/components/ui/LogoPln';
 
 /** Panel merek di kiri halaman masuk (00.1). */
 export default function LoginBrandPanel() {
     return (
         <section aria-label="Tentang aplikasi" className="flex flex-col justify-between gap-8 px-6 py-8 text-white sm:px-12 lg:w-[47%] lg:pr-4 lg:py-12 lg:pl-16">
             <div className="flex items-center gap-3.5">
-                <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border-[1.5px] border-[#4dbfff]/50 bg-[#146be0]">
-                    <img src={petir} alt="" width={22} height={22} />
-                </span>
+                <LogoPln ukuran={44} />
                 <div>
                     <p className="text-[9px] leading-[11px] font-bold tracking-[1.5px] text-[#66b2ff]">PT PLN (PERSERO) · ULP KOTA BARAT</p>
                     <p className="mt-0.5 text-[22px] leading-7 font-extrabold">Kinerja Biller</p>

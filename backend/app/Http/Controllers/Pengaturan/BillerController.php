@@ -26,7 +26,7 @@ class BillerController extends Controller
         return Inertia::render('SuperAdmin/MasterBiller', [
             'billers' => Biller::query()
                 ->with(['aliases' => fn ($a) => $a->orderBy('login_acmt'), 'user:id,biller_id,username_nip'])
-                ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('nama', 'like', "%{$q}%")
+                ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->whereRaw('LOWER(nama) LIKE ?', ['%'.strtolower($q).'%'])
                     ->orWhere('login_acmt', 'like', '%'.strtolower($q).'%')
                     ->orWhere('kode_petugas_acmt', 'like', '%'.strtoupper($q).'%')))
                 ->orderBy('nama')

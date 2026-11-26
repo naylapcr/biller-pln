@@ -26,7 +26,7 @@ class UserController extends Controller
 
         $users = User::query()
             ->with('biller:id,nama,login_acmt,kode_petugas_acmt')
-            ->when($filters['q'] ?? null, fn ($q, $t) => $q->where(fn ($w) => $w->where('nama', 'like', "%{$t}%")->orWhere('username_nip', 'like', "%{$t}%")))
+            ->when($filters['q'] ?? null, fn ($q, $t) => $q->where(fn ($w) => $w->whereRaw('LOWER(nama) LIKE ?', ['%'.strtolower($t).'%'])->orWhereRaw('LOWER(username_nip) LIKE ?', ['%'.strtolower($t).'%'])))
             ->when($filters['role'] ?? null, fn ($q, $r) => $q->where('role', $r))
             ->orderByRaw("CASE role WHEN 'super_admin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END")
             ->orderBy('nama')

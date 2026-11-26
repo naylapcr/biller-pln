@@ -166,7 +166,7 @@ class LaporanKinerja
             ->when($hanyaAktif, fn ($q) => $q->aktif())
             ->when($cari, fn ($q) => $q->where(fn ($w) => $w
                 ->whereRaw('LOWER(nama) LIKE ?', ['%'.strtolower($cari).'%'])
-                ->orWhere('nip', 'like', "%{$cari}%")
+                ->orWhereRaw('LOWER(nip) LIKE ?', ['%'.strtolower($cari).'%'])
                 ->orWhere('login_acmt', 'like', '%'.strtolower($cari).'%')
                 ->orWhere('kode_petugas_acmt', 'like', '%'.strtoupper($cari).'%')
                 ->orWhereIn('id', $rbm)))
