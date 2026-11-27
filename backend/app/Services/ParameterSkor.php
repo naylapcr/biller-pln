@@ -75,8 +75,11 @@ class ParameterSkor
         if ((float) $p['bobot_bonus_j'] < 0) {
             $masalah[] = 'Bobot bonus Hari J tidak boleh negatif.';
         }
+        if ((float) $p['bobot_kehadiran'] < 0 || (float) $p['bobot_kehadiran'] > 50) {
+            $masalah[] = 'Bobot kehadiran harus 0–50%.';
+        }
         if ((float) $p['ambang_kritis'] >= (float) $p['ambang_grade_a']) {
-            $masalah[] = 'Ambang Kritis harus lebih kecil dari ambang Grade A.';
+            $masalah[] = 'Ambang Perlu Pendampingan harus lebih kecil dari ambang Baik.';
         }
 
         return $masalah;

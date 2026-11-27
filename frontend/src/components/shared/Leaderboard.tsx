@@ -17,9 +17,9 @@ const MEDALI: Record<number, string> = {
 function Lingkaran({ b, nada, besar }: { b: BarisLeaderboard; nada: 'atas' | 'bawah'; besar: boolean }) {
     const warna =
         nada === 'bawah'
-            ? b.kategori === 'Perlu Evaluasi'
-                ? 'bg-pln-yellow-light text-pln-yellow-ink'
-                : 'bg-error-tint text-error-ink'
+            ? b.kategori === 'Cukup'
+                ? 'bg-sky-tint text-sky-ink'
+                : 'bg-pln-yellow-light text-pln-yellow-ink'
             : (MEDALI[b.peringkat] ?? 'bg-pln-blue-light text-pln-blue');
 
     return <span className={cn('inline-flex shrink-0 items-center justify-center rounded-full text-xs font-extrabold', besar ? 'size-[34px]' : 'size-7', warna)}>#{b.peringkat}</span>;

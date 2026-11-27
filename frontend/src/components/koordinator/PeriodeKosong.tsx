@@ -23,7 +23,7 @@ export default function PeriodeKosong({ kode }: { kode: string }) {
                 </Button>
             }
         >
-            <p className="mx-auto max-w-[520px] leading-5">Skor 25 Biller, Donut Chart distribusi, dan papan Top 5 / Bottom 5 akan muncul otomatis setelah berkas pertama di-commit.</p>
+            <p className="mx-auto max-w-[520px] leading-5">Skor 25 Biller, Donut Chart distribusi, dan papan Top 5 Teratas / Top 5 Terbawah akan muncul otomatis setelah berkas pertama di-commit.</p>
             <ol className="mt-[18px] grid gap-3.5 text-left md:grid-cols-3">
                 {LANGKAH.map(([judul, isi], i) => (
                     <li key={judul} className="rounded-xl border border-line bg-canvas p-4">

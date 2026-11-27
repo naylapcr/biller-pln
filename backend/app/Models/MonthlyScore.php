@@ -5,12 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** Skor bulanan satu biller (PRD 6.1). Skor akhir = rata-rata nilai modul + bonus Hari J, bisa > 100. */
+/** Skor bulanan satu biller (PRD 6.1). Skor akhir = rata-rata modul dan kehadiran (berbobot) + bonus Hari J, maksimal 100. */
 class MonthlyScore extends Model
 {
     protected $fillable = [
         'biller_id', 'period_id', 'nilai_per_modul', 'nilai_pasca_dasar', 'plg_per_jam', 'nilai_kecepatan', 'rasio_bu',
-        'rasio_ap2t', 'rata_rata_modul', 'bonus_hari_j', 'final_score', 'terbaca', 'peringkat', 'kategori',
+        'rasio_ap2t', 'rata_rata_modul', 'nilai_kehadiran', 'kehadiran', 'bonus_hari_j', 'final_score', 'terbaca', 'peringkat', 'kategori',
         'rules_snapshot', 'is_final', 'dihitung_at',
     ];
 
@@ -24,6 +24,8 @@ class MonthlyScore extends Model
             'rasio_bu' => 'float',
             'rasio_ap2t' => 'float',
             'rata_rata_modul' => 'float',
+            'nilai_kehadiran' => 'float',
+            'kehadiran' => 'array',
             'bonus_hari_j' => 'float',
             'final_score' => 'float',
             'terbaca' => 'integer',

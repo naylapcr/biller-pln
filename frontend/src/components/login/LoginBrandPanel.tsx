@@ -25,7 +25,7 @@ export default function LoginBrandPanel() {
                     Secara Transparan
                 </h1>
                 <p className="mt-5 max-w-[460px] text-sm leading-6 text-[#adc7eb]">
-                    Portal terpadu untuk absensi mandiri, validasi rekap baca meter, perhitungan otomatis skor 0–100 + bonus Hari J, hingga penetapan
+                    Portal terpadu untuk absensi mandiri, validasi rekap baca meter, perhitungan otomatis skor 0–100 (modul, kehadiran, dan bonus Hari J), hingga penetapan
                     laporan insentif resmi ULP Kota Barat.
                 </p>
                 <p className="mt-5 text-[17px] leading-[21px] font-bold text-[#38c2ff]">Akurat · Otomatis ACMT & AP2T · Realtime</p>

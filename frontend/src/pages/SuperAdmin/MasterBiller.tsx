@@ -183,7 +183,7 @@ function BillerForm({ biller, onClose }: { biller: Biller | null; onClose: () =>
             </FormField>
             <div className="flex items-center gap-2.5">
                 <Checkbox id="is_active" checked={data.is_active} onCheckedChange={(v) => setData('is_active', v === true)} />
-                <Label htmlFor="is_active">Biller aktif (ikut Top/Bottom 5)</Label>
+                <Label htmlFor="is_active">Biller aktif (ikut Top 5 Teratas/Terbawah)</Label>
             </div>
         </FormDialog>
     );

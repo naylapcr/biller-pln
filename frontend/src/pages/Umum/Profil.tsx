@@ -7,7 +7,8 @@ import Kartu from '@/components/ui/Kartu';
 import PageHeader from '@/components/ui/PageHeader';
 import PasswordInput from '@/components/ui/PasswordInput';
 import StatusChip from '@/components/ui/StatusChip';
-import UserAvatar from '@/components/ui/UserAvatar';
+import FotoProfil from '@/components/shared/FotoProfil';
+import Notice from '@/components/ui/Notice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { layoutByRole } from '@/layouts/MainLayout/layoutByRole';
@@ -78,7 +79,7 @@ function IsianSandi({ id, label, nilai, onChange, error, tanda }: { id: string; 
 
 /** 01.5, 02.9, 03.7 Profil Saya. */
 export default function Profil() {
-    const { profil, sesi, aktivitas } = usePage<Props>().props;
+    const { profil, sesi, aktivitas, auth } = usePage<Props>().props;
     const nama = useForm({ nama: profil.nama });
     const sandi = useForm({ current_password: '', password: '', password_confirmation: '' });
     const p = sandi.data.password;
@@ -112,9 +113,14 @@ export default function Profil() {
             />
 
             <div className="grid gap-[18px]">
+                {auth.user.wajib_ganti_sandi && (
+                    <Notice tone="danger">
+                        Demi keamanan, akun Anda masih memakai kata sandi bawaan atau kata sandi sementara dari Super Admin. Ganti kata sandi di bawah sebelum memakai fitur lain.
+                    </Notice>
+                )}
                 <section className="flex flex-col gap-3.5 rounded-2xl border border-line bg-white p-[18px] shadow-kartu">
                     <div className="flex flex-wrap items-center gap-3.5">
-                        <UserAvatar name={profil.nama} size={56} className={peran.avatar} />
+                        <FotoProfil nama={profil.nama} src={auth.user.foto_url} kelasAvatar={peran.avatar} />
                         <div className="min-w-0 flex-1 basis-60">
                             <div className="flex flex-wrap items-center gap-2">
                                 <p className="text-lg leading-[23px] font-extrabold text-ink">{profil.nama}</p>

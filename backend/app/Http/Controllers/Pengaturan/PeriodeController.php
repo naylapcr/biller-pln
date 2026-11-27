@@ -94,12 +94,20 @@ class PeriodeController extends Controller
             'kdbaca_normal.*' => ['string', 'max:5'],
             'prabayar_mulai' => ['required', 'integer', 'between:1,31'],
             'prabayar_selesai' => ['required', 'integer', 'between:1,31', 'gte:prabayar_mulai'],
-            'bobot_bonus_j' => ['required', 'numeric', 'min:0', 'max:20'],
+            'bobot_bonus_j' => ['required', 'numeric', 'min:0', 'max:10'],
+            'bobot_kehadiran' => ['required', 'numeric', 'between:0,50'],
+            'nilai_izin_tanpa_foto' => ['required', 'numeric', 'between:0,100'],
+            'kantor_lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:kantor_lng'],
+            'kantor_lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:kantor_lat'],
+            'radius_absen_m' => ['required', 'integer', 'between:20,5000'],
+            'nilai_terlambat' => ['required', 'numeric', 'between:0,100'],
+            'jam_masuk' => ['required', 'date_format:H:i'],
+            'jam_pulang' => ['required', 'date_format:H:i', 'after:jam_masuk'],
             'ambang_grade_a' => ['required', 'numeric', 'between:0,100'],
             'ambang_kritis' => ['required', 'numeric', 'between:0,100', 'lt:ambang_grade_a'],
             'jumlah_top' => ['required', 'integer', 'between:1,25'],
             'jumlah_bottom' => ['required', 'integer', 'between:1,25'],
-        ], ['ambang_kritis.lt' => 'Ambang Kritis harus lebih kecil dari ambang Grade A.']);
+        ], ['ambang_kritis.lt' => 'Ambang Perlu Pendampingan harus lebih kecil dari ambang Baik.', 'jam_pulang.after' => 'Jam pulang harus setelah jam masuk.']);
 
         $bobot = (float) $data['w_realisasi'] + (float) $data['w_eviden'] + (float) $data['w_kecepatan'];
         if (abs($bobot - 100) > 0.01) {
@@ -115,6 +123,12 @@ class PeriodeController extends Controller
             'sla_plg_per_jam' => $angka($data['sla_plg_per_jam']),
             'toleransi_kwh' => $angka($data['toleransi_kwh']),
             'bobot_bonus_j' => $angka($data['bobot_bonus_j']),
+            'bobot_kehadiran' => $angka($data['bobot_kehadiran']),
+            'nilai_izin_tanpa_foto' => $angka($data['nilai_izin_tanpa_foto']),
+            'kantor_lat' => isset($data['kantor_lat']) ? round((float) $data['kantor_lat'], 7) : null,
+            'kantor_lng' => isset($data['kantor_lng']) ? round((float) $data['kantor_lng'], 7) : null,
+            'radius_absen_m' => (int) $data['radius_absen_m'],
+            'nilai_terlambat' => $angka($data['nilai_terlambat']),
             'ambang_grade_a' => $angka($data['ambang_grade_a']),
             'ambang_kritis' => $angka($data['ambang_kritis']),
             'prabayar_mulai' => (int) $data['prabayar_mulai'],

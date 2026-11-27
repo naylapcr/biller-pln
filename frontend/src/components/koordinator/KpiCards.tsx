@@ -29,8 +29,8 @@ export default function KpiCards({ r }: { r: RingkasanDashboard }) {
             <StatCard
                 label={`Rata-rata Skor ${r.rata_skor.jumlah_biller} Biller`}
                 value={formatNumber(r.rata_skor.nilai, 1)}
-                chip={<StatusChip tone="info" label={`${r.distribusi_kategori['Grade A'] ?? 0} Grade A`} />}
-                caption="Skala 0–100 + Bonus Hari J"
+                chip={<StatusChip tone="info" label={`${r.distribusi_kategori['Baik'] ?? 0} Baik`} />}
+                caption="Skala 0–100 (modul, kehadiran, Hari J)"
             />
             <StatCard
                 label="Kecepatan & Eviden"

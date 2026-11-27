@@ -56,6 +56,7 @@
                 <th>Login ACMT</th>
                 <th class="kanan">Pascabayar</th>
                 <th class="kanan">Prabayar</th>
+                <th class="kanan">Kehadiran</th>
                 <th class="kanan">Bonus J</th>
                 <th class="kanan">Rasio BU</th>
                 <th class="kanan">Rasio AP2T</th>
@@ -71,18 +72,20 @@
                     <td class="mono">{{ $b['login_acmt'] }}</td>
                     <td class="kanan mono">{{ $fmt($b['pascabayar'], 1) }}</td>
                     <td class="kanan mono">{{ $fmt($b['prabayar'], 1) }}</td>
+                    <td class="kanan mono">{{ $fmt($b['kehadiran'] ?? null, 1) }}</td>
                     <td class="kanan mono">{{ $b['bonus_hari_j'] ? '+'.$fmt($b['bonus_hari_j'], 1) : '0' }}</td>
                     <td class="kanan mono">{{ $pct($b['rasio_bu']) }}</td>
                     <td class="kanan mono">{{ $pct($b['rasio_ap2t']) }}</td>
                     <td class="kanan mono"><strong>{{ $fmt($b['final_score'], 1) }}</strong></td>
-                    <td class="{{ $b['kategori'] === 'Kritis' ? 'kritis' : ($b['kategori'] === 'Perlu Evaluasi' ? 'evaluasi' : '') }}">{{ $b['kategori'] }}</td>
+                    <td class="{{ $b['kategori'] === 'Perlu Pendampingan' ? 'kritis' : ($b['kategori'] === 'Cukup' ? 'evaluasi' : '') }}">{{ $b['kategori'] }}</td>
                 </tr>
             @endforeach
         </tbody>
     </table>
 
     <p class="kaki">
-        Skor akhir = rata-rata nilai modul (skala 0–100) + bonus Hari J, sehingga bisa melewati 100.
+        Skor akhir = (1 − bobot kehadiran) × rata-rata nilai modul + bobot kehadiran × nilai kehadiran + bonus Hari J, maksimal 100.
+        Bonus Hari J = bobot × pelanggan Hari J terbaca ÷ jumlah pelanggan Hari J terbanyak di antara biller.
         Nilai pascabayar = (40% realisasi + 30% eviden + 30% kecepatan) × (1 − rasio Baca Ulang) × (1 − rasio AP2T).
         Dicetak {{ $dicetak->locale('id')->translatedFormat('j F Y H:i') }} WIB oleh {{ $oleh }}.
     </p>

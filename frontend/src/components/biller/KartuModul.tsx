@@ -32,8 +32,8 @@ export function KartuModulPasca({ skor }: { skor: SkorBiller }) {
                         warna="text-sky-val"
                     />
                     <BarisNilai
-                        label="Potongan Rasio Kesalahan"
-                        keterangan={`Baca Ulang ${rasio(p.baca_ulang.rasio)} · AP2T ${rasio(p.ap2t.rasio)}`}
+                        label="Potongan Rasio Kesalahan (Pengali, Bukan Bobot)"
+                        keterangan={`Nilai × (1 − rasio Baca Ulang) × (1 − rasio AP2T) · Baca Ulang ${rasio(p.baca_ulang.rasio)} · AP2T ${rasio(p.ap2t.rasio)}`}
                         nilai={p.nilai_dasar > 0 && p.nilai < p.nilai_dasar ? `−${formatPercent((1 - p.nilai / p.nilai_dasar) * 100, 2)}` : '0%'}
                         warna="text-pln-red"
                     />
@@ -45,7 +45,45 @@ export function KartuModulPasca({ skor }: { skor: SkorBiller }) {
     );
 }
 
-/** Modul Prabayar & Bonus Hari J di 01.1, termasuk modul yang menunggu berkas. */
+/** Kehadiran di 01.1: rekap absensi bulan kerja periode (bulan sebelum BLTH) dan nilainya. */
+export function KartuKehadiran({ skor }: { skor: SkorBiller }) {
+    const h = skor.kehadiran;
+    const a = skor.aturan;
+    const tanpaFoto = h ? h.izin + h.sakit - h.berfoto : 0;
+    const kurang = h ? Math.min(h.hadir, (h.terlambat ?? 0) + (h.pulang_cepat ?? 0) + (h.tanpa_pulang ?? 0)) : 0;
+
+    return (
+        <Kartu
+            judul={`Kehadiran (Bobot ${formatNumber(a?.bobot_kehadiran ?? 10)}%)`}
+            subjudul={h ? `Bulan kerja ${formatTanggal(`${h.bulan}-01`, 'MMMM yyyy')} · dari Absensi Saya` : 'Bulan kerja = bulan sebelum BLTH'}
+            aksi={<StatusChip tone={h ? 'success' : 'neutral'} label={h ? `Nilai: ${formatNumber(h.nilai, 1)}` : 'Belum ada absensi'} />}
+        >
+            {h ? (
+                <>
+                    <BarisNilai label="Hadir Tepat Waktu" keterangan={`${formatNumber(h.hadir - kurang)} hari × 100 · masuk ≤ ${(a?.jam_masuk ?? '07:30').replace(':', '.')}, pulang ≥ ${(a?.jam_pulang ?? '16:30').replace(':', '.')}`} nilai={formatNumber(h.hadir - kurang)} warna="text-success" />
+                    <BarisNilai
+                        label="Terlambat / Pulang Cepat / Tanpa Absen Pulang"
+                        keterangan={`${formatNumber(h.terlambat ?? 0)} terlambat · ${formatNumber(h.pulang_cepat ?? 0)} pulang cepat · ${formatNumber(h.tanpa_pulang ?? 0)} tanpa pulang · × ${formatNumber(a?.nilai_terlambat ?? 75)}`}
+                        nilai={formatNumber(kurang)}
+                        warna="text-pln-yellow-ink"
+                    />
+                    <BarisNilai label="Izin / Sakit Berlampiran" keterangan={`${formatNumber(h.berfoto)} hari × 100`} nilai={formatNumber(h.berfoto)} warna="text-sky-val" />
+                    <BarisNilai
+                        label="Izin / Sakit tanpa Lampiran"
+                        keterangan={`${formatNumber(tanpaFoto)} hari × ${formatNumber(a?.nilai_izin_tanpa_foto ?? 50)}`}
+                        nilai={formatNumber(tanpaFoto)}
+                        warna="text-pln-yellow-ink"
+                    />
+                    <BarisNilai label="Alpa" keterangan={`${formatNumber(h.alpa)} hari × 0`} nilai={formatNumber(h.alpa)} warna="text-pln-red" />
+                </>
+            ) : (
+                <p className="text-xs text-muted-ink">Belum ada catatan absensi di bulan kerja periode ini, jadi kehadiran tidak ikut menghitung skor.</p>
+            )}
+        </Kartu>
+    );
+}
+
+/** Modul Prabayar & Bonus Hari J di 01.1. Modul yang menunggu berkas tampil di Statistik Skor. */
 export function KartuModulPrabayar({ skor }: { skor: SkorBiller }) {
     const p = skor.nilai_per_modul.prabayar;
     const j = skor.bonus_hari_j;
@@ -74,12 +112,15 @@ export function KartuModulPrabayar({ skor }: { skor: SkorBiller }) {
                 </>
             )}
             <BarisNilai
-                label="Bonus Hari J (Di Luar Rata-rata)"
-                keterangan={j.jml_plg > 0 ? `${formatPercent(j.persen_tuntas, 0)} tuntas (${formatNumber(j.terbaca)} / ${formatNumber(j.jml_plg)} pelanggan)` : 'Tidak ada pelanggan Hari J'}
-                nilai={`+${formatNumber(j.nilai, 1)}`}
+                label={`Bonus Hari J (Maks. +${formatNumber(skor.aturan?.bobot_bonus_j ?? 2, 1)})`}
+                keterangan={
+                    j.jml_plg > 0
+                        ? `${formatNumber(j.terbaca)} terbaca Hari J dari ${formatNumber(j.jml_plg_total)} total pelanggan (${formatPercent(j.persen_tuntas, 0)} Hari J tuntas)`
+                        : 'Tidak ada pelanggan Hari J'
+                }
+                nilai={`+${formatNumber(j.nilai, 2)}`}
                 warna="text-violet"
             />
-            <BarisNilai label="Modul Menunggu Berkas" keterangan="Invoice, PDIL, dan AP2T belum aktif periode ini" nilai="—" warna="text-faint" />
         </Kartu>
     );
 }

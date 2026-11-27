@@ -28,7 +28,7 @@ export default function LeaderboardBiller() {
             <Head title="Leaderboard" />
             <PageHeader
                 title={`Leaderboard Kinerja ${posisi?.jumlah_biller || 25} Biller`}
-                description={periode ? `Papan peringkat Top 5 & Bottom 5 periode BLTH ${periode.kode} (${periode.nama})` : undefined}
+                description={periode ? `Papan peringkat Top 5 Teratas & Top 5 Terbawah periode BLTH ${periode.kode} (${periode.nama})` : undefined}
                 actions={
                     <>
                         <PeriodeSelect value={periode?.kode} options={periodeOptions} />
@@ -58,14 +58,14 @@ export default function LeaderboardBiller() {
                         </div>
                         <div className="flex flex-wrap items-center gap-2.5">
                             <StatusChip label={`Skor Saya: ${formatNumber(posisi.final_score, 1)}`} tone="success" />
-                            <StatusChip {...metaKategori(posisi.kategori)} tone={posisi.kategori === 'Grade A' ? 'info' : metaKategori(posisi.kategori).tone} />
+                            <StatusChip {...metaKategori(posisi.kategori)} tone={posisi.kategori === 'Baik' ? 'info' : metaKategori(posisi.kategori).tone} />
                         </div>
                     </section>
                 )}
 
                 <div className="grid gap-[18px] xl:grid-cols-2">
                     <Leaderboard
-                        judul="Top 5 Biller Terbaik"
+                        judul="Top 5 Teratas"
                         subjudul="Menampilkan nama & peringkat saja"
                         chip={<StatusChip label="Kinerja Unggul" tone="waiting" />}
                         baris={top}
@@ -73,9 +73,9 @@ export default function LeaderboardBiller() {
                         sorotBillerId={billerId}
                     />
                     <Leaderboard
-                        judul="Bottom 5 Peringkat Bawah"
+                        judul="Top 5 Terbawah"
                         subjudul="Menampilkan nama & peringkat saja (tanpa skor/kesalahan)"
-                        chip={<StatusChip label="Fokus Pembinaan" tone="danger" />}
+                        chip={<StatusChip label="Posisi Bawah" tone="neutral" />}
                         baris={bottom}
                         nada="bawah"
                         sorotBillerId={billerId}

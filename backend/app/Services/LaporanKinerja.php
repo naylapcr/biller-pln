@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 /** Data dashboard, leaderboard, rincian skor, dan histori WO (PRD bagian 8 dan 10.2). */
 class LaporanKinerja
 {
-    public const KATEGORI = ['Grade A', 'Perlu Evaluasi', 'Kritis'];
+    public const KATEGORI = ['Baik', 'Cukup', 'Perlu Pendampingan'];
 
     public function __construct(
         private readonly ParameterSkor $parameter,
@@ -31,13 +31,12 @@ class LaporanKinerja
 
     /**
      * Dashboard Monitoring (02.1): 4 kartu KPI, distribusi kategori, statistik absensi hari ini,
-     * dan jumlah login belum terpetakan. Filter hari baca dan jenis meter hanya untuk angka pascabayar.
+     * dan jumlah login belum terpetakan. Filter hari baca hanya untuk angka pascabayar.
      */
-    public function ringkasan(Period $periode, ?string $hariBaca = null, ?string $jenisMeter = null): array
+    public function ringkasan(Period $periode, ?string $hariBaca = null): array
     {
         $jumlah = fn (int $periodId) => DB::table('reading_logs')->where('period_id', $periodId)
             ->when($hariBaca, fn ($q) => $q->where('hari_baca', $hariBaca))
-            ->when($jenisMeter, fn ($q) => $q->where('jenis_meter', $jenisMeter))
             ->selectRaw('COALESCE(SUM(jml_plg), 0) as jml_plg, COALESCE(SUM(terbaca), 0) as terbaca, COALESCE(SUM(foto_berhasil), 0) as foto')
             ->first();
         $pasca = $jumlah($periode->id);
@@ -145,6 +144,7 @@ class LaporanKinerja
                 'final_score' => $s->final_score,
                 'pascabayar' => $s->nilai_per_modul['pascabayar']['nilai'] ?? null,
                 'prabayar' => $s->nilai_per_modul['prabayar']['nilai'] ?? null,
+                'kehadiran' => $s->nilai_kehadiran,
                 'bonus_hari_j' => $s->bonus_hari_j,
                 'kategori' => $s->kategori,
                 'rasio_bu' => $s->rasio_bu,
@@ -186,6 +186,7 @@ class LaporanKinerja
                     'peringkat' => $s?->peringkat,
                     'pascabayar' => $s?->nilai_per_modul['pascabayar']['nilai'] ?? null,
                     'prabayar' => $s?->nilai_per_modul['prabayar']['nilai'] ?? null,
+                    'kehadiran' => $s?->nilai_kehadiran,
                     'bonus_hari_j' => $s?->bonus_hari_j,
                     'rasio_bu' => $s?->rasio_bu,
                     'rasio_ap2t' => $s?->rasio_ap2t,
@@ -217,9 +218,11 @@ class LaporanKinerja
             'nilai_per_modul' => (object) collect($modul)->map(fn ($m) => collect($m)->except('hari_j')->all())->all(),
             'jumlah_modul' => count($modul),
             'rata_rata_modul' => $s?->rata_rata_modul,
+            'kehadiran' => $s?->kehadiran,
             'bonus_hari_j' => $hariJ ? [
-                'terbaca' => $hariJ['terbaca'], 'jml_plg' => $hariJ['jml_plg'], 'persen_tuntas' => $hariJ['persen_tuntas'], 'nilai' => $s->bonus_hari_j,
-            ] : ['terbaca' => 0, 'jml_plg' => 0, 'persen_tuntas' => null, 'nilai' => 0.0],
+                'terbaca' => $hariJ['terbaca'], 'jml_plg' => $hariJ['jml_plg'], 'persen_tuntas' => $hariJ['persen_tuntas'],
+                'jml_plg_total' => $hariJ['jml_plg_total'] ?? $modul['pascabayar']['jml_plg'] ?? 0, 'nilai' => $s->bonus_hari_j,
+            ] : ['terbaca' => 0, 'jml_plg' => 0, 'persen_tuntas' => null, 'jml_plg_total' => 0, 'nilai' => 0.0],
             'final_score' => $s?->final_score,
             'peringkat' => $s?->peringkat,
             'jumlah_biller' => MonthlyScore::query()->where('period_id', $periode->id)->count(),
@@ -228,6 +231,7 @@ class LaporanKinerja
             'dihitung_at' => $s?->dihitung_at?->toIso8601String(),
             'aturan' => $s?->rules_snapshot ? array_intersect_key($s->rules_snapshot, array_flip([
                 'w_realisasi', 'w_eviden', 'w_kecepatan', 'sla_plg_per_jam', 'jam_kerja_per_hari', 'bobot_bonus_j', 'ambang_grade_a', 'ambang_kritis',
+                'bobot_kehadiran', 'nilai_izin_tanpa_foto', 'nilai_terlambat', 'jam_masuk', 'jam_pulang',
             ])) : null,
             'jadwal_prabayar' => array_map(
                 fn (CarbonImmutable $t) => $t->toDateString(),

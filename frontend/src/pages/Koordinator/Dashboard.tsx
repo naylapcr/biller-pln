@@ -22,8 +22,7 @@ import type { BarisLeaderboard, Option, PageProps, PeriodeInfo } from '@/types';
 type Props = PageProps<{
     periode: PeriodeInfo | null;
     periodeOptions: Option[];
-    filters: { hari_baca?: string; jenis_meter?: string };
-    jenisMeterOptions: Option[];
+    filters: { hari_baca?: string };
     ringkasan: RingkasanDashboard | null;
     top: BarisLeaderboard[];
     bottom: BarisLeaderboard[];
@@ -34,7 +33,7 @@ const HARI = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'J'];
 
 /** 02.1 Dashboard Monitoring (Koordinator Admin) dan 04.3 keadaan kosong. */
 export default function Dashboard() {
-    const { periode, periodeOptions, filters, jenisMeterOptions, ringkasan, top, bottom, tren } = usePage<Props>().props;
+    const { periode, periodeOptions, filters, ringkasan, top, bottom, tren } = usePage<Props>().props;
     const kosong = ringkasan !== null && ringkasan.rata_skor.jumlah_biller === 0;
     const puncak = tren.reduce<{ tanggal: string; terbaca: number } | null>((m, t) => (!m || t.terbaca > m.terbaca ? t : m), null);
 
@@ -50,7 +49,7 @@ export default function Dashboard() {
             <PageHeader
                 title={kosong && periode ? `Dashboard Monitoring — BLTH ${periode.kode} (${periode.nama})` : `Dashboard Monitoring ${ringkasan?.rata_skor.jumlah_biller || 25} Biller`}
                 description={
-                    kosong ? 'Periode baru dibuka · Menunggu unggahan berkas ACMT & AP2T pertama' : 'Ringkasan KPI, Top 5 & Bottom 5, serta tren pembacaan harian · ULP Kota Barat'
+                    kosong ? 'Periode baru dibuka · Menunggu unggahan berkas ACMT & AP2T pertama' : 'Ringkasan KPI, Top 5 Teratas & Top 5 Terbawah, serta tren pembacaan harian · ULP Kota Barat'
                 }
                 actions={
                     kosong ? (
@@ -84,14 +83,7 @@ export default function Dashboard() {
                                 </option>
                             ))}
                         </NativeSelect>
-                        <NativeSelect className="w-full sm:w-[220px]" aria-label="Jenis meter" value={filters.jenis_meter ?? ''} onChange={(e) => filter({ jenis_meter: e.target.value })}>
-                            <option value="">Meter: Semua</option>
-                            {jenisMeterOptions.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                    Meter: {m.label}
-                                </option>
-                            ))}
-                        </NativeSelect>
+
                         {ringkasan.belum_terpetakan > 0 && (
                             <Link href={route('pemetaan.index')} className="sm:ml-auto">
                                 <StatusChip titik tone="waiting" label={`${ringkasan.belum_terpetakan} Login Belum Terpetakan`} />
@@ -99,33 +91,31 @@ export default function Dashboard() {
                         )}
                     </section>
 
-                    {(filters.hari_baca || filters.jenis_meter) && (
-                        <Notice tone="info">Filter hari baca dan jenis meter hanya berlaku untuk kartu realisasi dan eviden pascabayar.</Notice>
-                    )}
+                    {filters.hari_baca && <Notice tone="info">Filter hari baca hanya berlaku untuk kartu realisasi dan eviden pascabayar.</Notice>}
                     <KpiCards r={ringkasan} />
 
                     <div className="grid gap-4 xl:grid-cols-2">
                         <Kartu judul={`Distribusi Kategori ${ringkasan.rata_skor.jumlah_biller} Biller`} aksi={<StatusChip label={`BLTH ${periode?.kode}`} tone="info" />}>
                             <DistribusiKategori data={ringkasan.distribusi_kategori} />
                         </Kartu>
-                        <Kartu judul={`Statistik Absensi Hari Ini (${formatTanggal(new Date(), 'd MMM')})`} aksi={<StatusChip label="Tidak Pengaruhi Skor" tone="waiting" />}>
+                        <Kartu judul={`Statistik Absensi Hari Ini (${formatTanggal(new Date(), 'd MMM')})`} aksi={<StatusChip label="Ikut Skor Biller" tone="success" />}>
                             <StatistikAbsensi data={ringkasan.absensi_hari_ini} />
                         </Kartu>
                     </div>
 
                     <div className="grid gap-4 xl:grid-cols-2">
                         <Leaderboard
-                            judul="Top 5 Biller Terbaik"
+                            judul="Top 5 Teratas"
                             subjudul="Klik nama untuk buka Drawer Profil Biller"
-                            chip={<StatusChip label="Grade A" tone="success" />}
+                            chip={<StatusChip label="Baik" tone="success" />}
                             baris={top}
                             nada="atas"
                             onPilih={bukaDrawer}
                         />
                         <Leaderboard
-                            judul="Bottom 5 Perlu Evaluasi & Kritis"
+                            judul="Top 5 Terbawah"
                             subjudul="Klik nama untuk evaluasi rincian kesalahan"
-                            chip={<StatusChip label="Fokus Pembinaan" tone="danger" />}
+                            chip={<StatusChip label="Posisi Bawah" tone="neutral" />}
                             baris={bottom}
                             nada="bawah"
                             onPilih={bukaDrawer}

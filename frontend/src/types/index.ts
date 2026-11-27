@@ -6,6 +6,8 @@ export interface AuthUser {
     nama: string;
     role: Role;
     role_label: string;
+    foto_url: string | null;
+    wajib_ganti_sandi: boolean;
     biller: {
         id: number;
         nip: string | null;
@@ -71,7 +73,7 @@ export interface PeriodeInfo {
     terbuka: boolean;
 }
 
-export type Kategori = 'Grade A' | 'Perlu Evaluasi' | 'Kritis';
+export type Kategori = 'Baik' | 'Cukup' | 'Perlu Pendampingan';
 
 export interface NilaiPascabayar {
     jml_plg: number;
@@ -110,7 +112,8 @@ export interface SkorBiller {
     nilai_per_modul: { pascabayar?: NilaiPascabayar; prabayar?: NilaiPrabayar };
     jumlah_modul: number;
     rata_rata_modul: number | null;
-    bonus_hari_j: { terbaca: number; jml_plg: number; persen_tuntas: number | null; nilai: number };
+    kehadiran: Kehadiran | null;
+    bonus_hari_j: { terbaca: number; jml_plg: number; persen_tuntas: number | null; jml_plg_total: number; nilai: number };
     final_score: number | null;
     peringkat: number | null;
     jumlah_biller: number;
@@ -127,7 +130,27 @@ export interface SkorBiller {
         bobot_bonus_j: number;
         ambang_grade_a: number;
         ambang_kritis: number;
+        bobot_kehadiran?: number;
+        nilai_izin_tanpa_foto?: number;
+        nilai_terlambat?: number;
+        jam_masuk?: string;
+        jam_pulang?: string;
     } | null;
+}
+
+/** Nilai kehadiran biller di bulan kerja periode (bulan sebelum BLTH). */
+export interface Kehadiran {
+    bulan: string;
+    hari: number;
+    hadir: number;
+    terlambat?: number;
+    pulang_cepat?: number;
+    tanpa_pulang?: number;
+    izin: number;
+    sakit: number;
+    alpa: number;
+    berfoto: number;
+    nilai: number;
 }
 
 export interface TitikTren {
@@ -188,9 +211,18 @@ export interface BarisAbsensi {
     tanggal: string;
     status: StatusAbsensi;
     absen_at: string | null;
+    terlambat_menit: number | null;
+    pulang_at: string | null;
+    pulang_cepat_menit: number | null;
     lat: number | null;
     lng: number | null;
+    jarak_m: number | null;
+    pulang_jarak_m: number | null;
+    ip: string | null;
+    perangkat: string | null;
     keterangan: string | null;
+    foto_url: string | null;
+    lampiran_pdf: boolean;
     sumber: 'mandiri' | 'sistem';
     dikoreksi: boolean;
     alasan_diubah: string | null;
@@ -198,6 +230,8 @@ export interface BarisAbsensi {
 
 export interface RingkasanAbsensi {
     hadir: number;
+    terlambat: number;
+    pulang_cepat: number;
     izin: number;
     sakit: number;
     alpa: number;
@@ -225,6 +259,7 @@ export interface BarisLeaderboard {
     final_score?: number;
     pascabayar?: number | null;
     prabayar?: number | null;
+    kehadiran?: number | null;
     bonus_hari_j?: number;
     kategori?: Kategori;
     rasio_bu?: number | null;

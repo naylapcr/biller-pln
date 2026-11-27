@@ -22,7 +22,7 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
 
     public function headings(): array
     {
-        return ['#', 'Nama', 'NIP', 'Login ACMT', 'Pascabayar', 'Prabayar', 'Bonus J', 'Rasio BU', 'Rasio AP2T', 'Skor Akhir', 'Kategori'];
+        return ['#', 'Nama', 'NIP', 'Login ACMT', 'Pascabayar', 'Prabayar', 'Kehadiran', 'Bonus J', 'Rasio BU', 'Rasio AP2T', 'Skor Akhir', 'Kategori'];
     }
 
     public function array(): array
@@ -34,6 +34,7 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
             $b['login_acmt'],
             $b['pascabayar'],
             $b['prabayar'],
+            $b['kehadiran'] ?? null,
             $b['bonus_hari_j'],
             $b['rasio_bu'],
             $b['rasio_ap2t'],
@@ -44,6 +45,6 @@ class PeringkatExport implements FromArray, ShouldAutoSize, WithColumnFormatting
 
     public function columnFormats(): array
     {
-        return ['E' => '0.00', 'F' => '0.00', 'G' => '0.00', 'H' => '0.00%', 'I' => '0.00%', 'J' => '0.00'];
+        return ['E' => '0.00', 'F' => '0.00', 'G' => '0.00', 'H' => '0.00', 'I' => '0.00%', 'J' => '0.00%', 'K' => '0.00'];
     }
 }

@@ -6,6 +6,7 @@ use App\Models\RereadCase;
 use App\Services\LayananPeriode;
 use App\Services\ParameterSkor;
 use App\Services\PengelolaBatch;
+use App\Services\PenghitungSkor;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -56,7 +57,7 @@ test('skor dihitung sesuai rumus PRD 6.1 dengan parameter bawaan', function () {
     commitBerkas(dataSkor());
 
     // Akmal: R = 100/102, E = 90/100, K = (100 ÷ (2 hari × 6 jam)) ÷ 33,3 = 25.
-    // Dasar = 0,4×98,04 + 0,3×90 + 0,3×25 = 73,72; × (1 − 1/100) = 72,98; + bonus J 5 × 2/2 = 77,98.
+    // Dasar = 0,4×98,04 + 0,3×90 + 0,3×25 = 73,72; × (1 − 1/100) = 72,98; + bonus J 2 terbaca ÷ 102 pelanggan × 100 = 1,96 → 74,94.
     $akmal = skor('18111.akmal');
     $pasca = $akmal->nilai_per_modul['pascabayar'];
     expect($pasca['realisasi'])->toEqualWithDelta(98.04, 0.01)
@@ -66,9 +67,9 @@ test('skor dihitung sesuai rumus PRD 6.1 dengan parameter bawaan', function () {
         ->and($akmal->nilai_pasca_dasar)->toEqualWithDelta(73.72, 0.01)
         ->and($akmal->rasio_bu)->toEqualWithDelta(0.01, 0.0001)
         ->and($pasca['nilai'])->toEqualWithDelta(72.98, 0.01)
-        ->and($akmal->bonus_hari_j)->toBe(5.0)
-        ->and($akmal->final_score)->toEqualWithDelta(77.98, 0.01)
-        ->and($akmal->kategori)->toBe('Perlu Evaluasi')
+        ->and($akmal->bonus_hari_j)->toBe(1.96)
+        ->and($akmal->final_score)->toEqualWithDelta(74.94, 0.01)
+        ->and($akmal->kategori)->toBe('Cukup')
         // Joni: 0,4×100 + 0,3×100 + 0,3×40 = 82, tanpa kasus Baca Ulang dan tanpa Hari J.
         ->and(skor('18111.joni')->final_score)->toBe(82.0)
         ->and(skor('18111.joni')->peringkat)->toBe(1)
@@ -79,12 +80,28 @@ test('skor dihitung sesuai rumus PRD 6.1 dengan parameter bawaan', function () {
 test('mengubah w_kecepatan atau bobot_bonus_j langsung mengubah final_score periode terbuka', function () {
     commitBerkas(dataSkor());
 
-    app(ParameterSkor::class)->ubah($this->periode, ['bobot_bonus_j' => 10], superAdmin());
-    expect(skor('18111.akmal')->final_score)->toEqualWithDelta(82.98, 0.01)
+    // Batas bonus 1 poin: bonus Akmal (1,96) dipotong jadi 1 → 72,98 + 1 = 73,98.
+    app(ParameterSkor::class)->ubah($this->periode, ['bobot_bonus_j' => 1], superAdmin());
+    expect(skor('18111.akmal')->final_score)->toEqualWithDelta(73.98, 0.01)
         ->and(skor('18111.joni')->final_score)->toBe(82.0);
 
     app(ParameterSkor::class)->ubah($this->periode, ['w_eviden' => 20, 'w_kecepatan' => 40], superAdmin());
     expect(skor('18111.joni')->final_score)->toBe(76.0); // 40 + 20 + 0,4×40
+});
+
+test('bonus Hari J sebanding dengan jumlah pelanggan: TERBACA_J ÷ total pelanggan × 100, paling besar 2', function () {
+    commitBerkas(fn ($c) => $c->tunggal([
+        ['hari' => 'A', 'login' => '18111.AKMAL', 'kode' => 'AWA', 'jml' => 1488, 'terbaca' => 1488, 'foto' => 100, 'mulai' => jam(26, 8), 'detik' => 3600],
+        ['hari' => 'J', 'login' => '18111.AKMAL', 'kode' => 'AWA', 'jml' => 5, 'terbaca' => 5, 'foto' => 5, 'mulai' => jam(1, 8), 'detik' => 600],
+        ['hari' => 'A', 'login' => '18111.joni', 'kode' => 'ARA', 'jml' => 100, 'terbaca' => 100, 'foto' => 100, 'mulai' => jam(26, 8), 'detik' => 3600],
+        ['hari' => 'J', 'login' => '18111.joni', 'kode' => 'ARA', 'jml' => 8, 'terbaca' => 6, 'foto' => 6, 'mulai' => jam(1, 8), 'detik' => 600],
+    ]));
+
+    // Akmal: 5 dari 1.493 pelanggan → +0,33 (kecil, sebanding dengan bebannya). Joni: 6 ÷ 108 × 100 = 5,56 → dibatasi +2.
+    expect(skor('18111.akmal')->bonus_hari_j)->toBe(0.33)
+        ->and(skor('18111.joni')->bonus_hari_j)->toBe(2.0)
+        ->and(skor('18111.akmal')->nilai_per_modul['pascabayar']['hari_j'])->toMatchArray(['jml_plg_total' => 1493, 'persen_tuntas' => 100.0])
+        ->and((float) MonthlyScore::max('final_score'))->toBeLessThanOrEqual(100.0);
 });
 
 test('kasus Baca Ulang dibebankan ke pemilik KODE RBM, bukan ke kolom PETUGAS', function () {
@@ -140,13 +157,13 @@ test('seri diputus oleh rasio Baca Ulang lebih kecil, lalu terbaca lebih banyak'
         ->and(MonthlyScore::orderBy('peringkat')->with('biller')->get()->pluck('biller.login_acmt')->first())->toBe('18111.deni');
 });
 
-test('kategori mengikuti ambang Grade A dan Kritis', function () {
+test('kategori mengikuti ambang Baik dan Perlu Pendampingan', function () {
     $aturan = ParameterSkor::bawaan();
 
-    expect(App\Services\PenghitungSkor::kategori(104.6, $aturan))->toBe('Grade A')
-        ->and(App\Services\PenghitungSkor::kategori(85.0, $aturan))->toBe('Grade A')
-        ->and(App\Services\PenghitungSkor::kategori(84.9, $aturan))->toBe('Perlu Evaluasi')
-        ->and(App\Services\PenghitungSkor::kategori(64.9, $aturan))->toBe('Kritis');
+    expect(PenghitungSkor::kategori(104.6, $aturan))->toBe('Baik')
+        ->and(PenghitungSkor::kategori(85.0, $aturan))->toBe('Baik')
+        ->and(PenghitungSkor::kategori(84.9, $aturan))->toBe('Cukup')
+        ->and(PenghitungSkor::kategori(64.9, $aturan))->toBe('Perlu Pendampingan');
 });
 
 test('tutup periode wajib mengetik kode periode; setelah ditutup skor final dan parameter terkunci', function () {

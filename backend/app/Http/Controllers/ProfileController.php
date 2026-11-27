@@ -5,12 +5,16 @@ namespace App\Http\Controllers;
 use App\Http\Requests\PasswordUpdateRequest;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\AuditLog;
+use App\Models\User;
 use App\Services\Audit;
 use App\Services\LayananAbsensi;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
 /** Profil Saya (01.5, 02.9, 03.7): identitas, sesi, ubah nama, ganti kata sandi, 3 aktivitas terakhir. */
 class ProfileController extends Controller
@@ -70,9 +74,54 @@ class ProfileController extends Controller
 
     public function updatePassword(PasswordUpdateRequest $request): RedirectResponse
     {
-        $request->user()->update(['password' => $request->validated('password')]);
+        $request->user()->update(['password' => $request->validated('password'), 'wajib_ganti_sandi' => false]);
         Audit::catat(Audit::CHANGE_PASSWORD, $request->user());
 
         return back()->with('success', 'Kata sandi berhasil diubah.');
+    }
+
+    /** Foto profil: diperkecil di browser (±256 px) lalu disimpan di disk unggahan, menggantikan foto lama. */
+    public function updateFoto(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'foto' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:'.(int) config('sipermon.absensi.foto_profil_maks_kb'), 'dimensions:max_width=2048,max_height=2048'],
+        ], ['foto.required' => 'Pilih foto lebih dulu.', 'foto.image' => 'Berkas harus berupa foto.', 'foto.max' => 'Ukuran foto maksimal 1 MB.']);
+
+        $user = $request->user();
+        $berkas = $request->file('foto');
+        $path = $berkas->storeAs('profil', $user->id.'-'.Str::random(8).'.'.($berkas->guessExtension() ?: 'jpg'), ['disk' => LayananAbsensi::disk()]);
+        if ($user->foto_path) {
+            Storage::disk(LayananAbsensi::disk())->delete($user->foto_path);
+        }
+        $user->forceFill(['foto_path' => $path])->save();
+        Audit::catat(Audit::UPDATE_PROFILE, $user, null, ['foto' => 'diganti']);
+
+        return back()->with('success', 'Foto profil diperbarui.');
+    }
+
+    public function hapusFoto(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        if ($user->foto_path) {
+            Storage::disk(LayananAbsensi::disk())->delete($user->foto_path);
+            $user->forceFill(['foto_path' => null])->save();
+            Audit::catat(Audit::UPDATE_PROFILE, $user, null, ['foto' => 'dihapus']);
+        }
+
+        return back()->with('success', 'Foto profil dihapus.');
+    }
+
+    /** Foto profil hanya untuk pengguna yang sudah login (tidak publik). */
+    public function foto(User $user): HttpResponse
+    {
+        abort_if($user->foto_path === null, 404);
+        $diskNama = LayananAbsensi::disk();
+        $disk = Storage::disk($diskNama);
+        abort_unless($disk->exists($user->foto_path), 404);
+        if (config("filesystems.disks.{$diskNama}.driver") === 's3') {
+            return redirect()->away($disk->temporaryUrl($user->foto_path, now()->addMinutes(30)));
+        }
+
+        return $disk->response($user->foto_path, null, ['Cache-Control' => 'private, max-age=86400']);
     }
 }

@@ -24,7 +24,7 @@ export default function PeriodeTerkunci({ kode, nama, jumlah, bobot, ringkasan }
         ? [
               ['Rata-Rata Skor Final', formatNumber(ringkasan.rata, 1)],
               ['Peringkat #1 Final', juara ? `${juara.nama} (${formatNumber(juara.final_score, 1)})` : '–'],
-              ['Grade A / Evaluasi / Kritis', `${['Grade A', 'Perlu Evaluasi', 'Kritis'].map((k) => ringkasan.kategori[k] ?? 0).join(' / ')} Biller`],
+              ['Baik / Cukup / Pendampingan', `${['Baik', 'Cukup', 'Perlu Pendampingan'].map((k) => ringkasan.kategori[k] ?? 0).join(' / ')} Biller`],
               ['Total Batch Terkunci', `${ringkasan.batch} Batch Final`],
           ]
         : [];

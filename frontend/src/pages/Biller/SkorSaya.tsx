@@ -1,9 +1,8 @@
 import { Head, usePage } from '@inertiajs/react';
 import { ChartNoAxesColumn } from 'lucide-react';
 
-import { KartuModulPasca, KartuModulPrabayar } from '@/components/biller/KartuModul';
+import { KartuKehadiran, KartuModulPasca, KartuModulPrabayar } from '@/components/biller/KartuModul';
 import KartuSkorSaya from '@/components/biller/KartuSkorSaya';
-import PanelTransparansi from '@/components/biller/PanelTransparansi';
 import StatistikSkor from '@/components/biller/StatistikSkor';
 import ChipPeriode from '@/components/shared/ChipPeriode';
 import PeriodeSelect from '@/components/shared/PeriodeSelect';
@@ -52,17 +51,18 @@ export default function SkorSaya() {
                 <div className="grid gap-[18px]">
                     <KartuSkorSaya skor={skor} />
 
-                    <div className="grid gap-[18px] xl:grid-cols-2">
-                        <StatistikSkor skor={skor} />
-                        <Kartu judul="Tren Skor 4 Periode (BLTH)" aksi={<ChipSelisih data={tren.map((t) => ({ label: t.label, nilai: t.final_score }))} />}>
-                            <TrenSkor data={tren} />
-                            <PanelTransparansi skor={skor} />
-                        </Kartu>
-                    </div>
+                    <StatistikSkor skor={skor} />
 
                     <div className="grid items-start gap-[18px] xl:grid-cols-2">
                         <KartuModulPasca skor={skor} />
                         <KartuModulPrabayar skor={skor} />
+                    </div>
+
+                    <div className="grid items-start gap-[18px] xl:grid-cols-2">
+                        <Kartu judul="Tren Skor 4 Periode (BLTH)" aksi={<ChipSelisih data={tren.map((t) => ({ label: t.label, nilai: t.final_score }))} />}>
+                            <TrenSkor data={tren} />
+                        </Kartu>
+                        <KartuKehadiran skor={skor} />
                     </div>
 
                     <Kartu

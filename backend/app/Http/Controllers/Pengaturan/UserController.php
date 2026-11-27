@@ -64,7 +64,8 @@ class UserController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validasi($request);
-        $user = User::create($data);
+        // Kata sandi dari Super Admin bersifat sementara: pengguna wajib menggantinya saat login pertama.
+        $user = User::create($data + ['wajib_ganti_sandi' => true]);
         Audit::catat(Audit::CREATE_USER, $user, null, $this->jejak($user));
 
         return back()->with('success', "Akun {$user->nama} dibuat.");
@@ -75,6 +76,8 @@ class UserController extends Controller
         $data = $this->validasi($request, $user);
         if (blank($data['password'] ?? null)) {
             unset($data['password']);
+        } elseif (! $user->is($request->user())) {
+            $data['wajib_ganti_sandi'] = true; // reset oleh Super Admin
         }
         if ($user->is($request->user()) && (($data['role'] ?? null) !== $user->role->value || ! ($data['is_active'] ?? true))) {
             return back()->with('error', 'Anda tidak bisa mengubah peran atau menonaktifkan akun sendiri.');

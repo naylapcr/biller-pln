@@ -7,7 +7,7 @@ import PeriodeSelect from '@/components/shared/PeriodeSelect';
 import { ChipSelisih } from '@/components/shared/TrenSkor';
 import KartuKesiapanTutup, { persenSiap, type SyaratTutup } from '@/components/superadmin/KartuKesiapanTutup';
 import ModalTutupPeriode from '@/components/superadmin/ModalTutupPeriode';
-import DonutChart from '@/components/ui/DonutChart';
+
 import EmptyState from '@/components/ui/EmptyState';
 import Kartu from '@/components/ui/Kartu';
 import PageHeader from '@/components/ui/PageHeader';
@@ -55,7 +55,7 @@ export default function DashboardSistem() {
             <Head title="Dashboard Sistem" />
             <PageHeader
                 title="Dashboard Sistem — Super Admin"
-                description={`Ringkasan kesehatan data, komposisi 3 peran baku, dan kesiapan penutupan periode BLTH ${periode?.kode ?? '–'}`}
+                description={`Ringkasan kesehatan data, aktivitas terbaru, dan kesiapan penutupan periode BLTH ${periode?.kode ?? '–'}`}
                 actions={
                     <>
                         <PeriodeSelect value={periode?.kode} options={periodeOptions} awalan="" className="w-52" />
@@ -123,31 +123,14 @@ export default function DashboardSistem() {
                         <Kartu judul={`Kategori ${Object.values(sistem.distribusi_kategori).reduce((a, b) => a + b, 0) || 25} Biller`} className="p-4">
                             <DistribusiKategori data={sistem.distribusi_kategori} bawah />
                         </Kartu>
-                        <Kartu judul="Komposisi 3 Peran Baku" className="p-4">
-                            <DonutChart
-                                bawah
-                                tengah={formatNumber(totalAkun)}
-                                keterangan="Akun Aktif"
-                                data={[
-                                    { label: 'Biller', nilai: akun.biller, warna: 'stroke-success', titik: 'bg-success' },
-                                    { label: 'Koordinator', nilai: akun.admin, warna: 'stroke-pln-blue', titik: 'bg-pln-blue' },
-                                    { label: 'Super Admin', nilai: akun.super_admin, warna: 'stroke-amber', titik: 'bg-amber' },
-                                ]}
-                            />
-                        </Kartu>
                         <Kartu judul="Kesiapan Tutup Periode" className="p-4">
                             <KartuKesiapanTutup syarat={sistem.kesiapan_tutup} />
                         </Kartu>
-                    </div>
-
-                    <div className="grid items-start gap-4 xl:grid-cols-2">
-                        <Kartu judul="Tren Rata-Rata Skor 25 Biller (4 BLTH)" aksi={<ChipSelisih data={sistem.tren_rata} />}>
-                            <TrendLine data={sistem.tren_rata.map((t) => ({ kode: t.periode, label: t.label.split(' ')[0], nilai: t.nilai }))} tinggi={150} warna="sky" />
-                        </Kartu>
                         <Kartu
-                            judul="Aktivitas Audit Trail Terbaru"
+                            className="md:col-span-2 xl:col-span-1"
+                            judul="Audit Trail Terbaru"
                             aksi={
-                                <Button variant="secondary" asChild>
+                                <Button variant="secondary" size="sm" asChild>
                                     <Link href={route('pengaturan.audit.index')}>Lihat Semua →</Link>
                                 </Button>
                             }
@@ -169,6 +152,10 @@ export default function DashboardSistem() {
                             </ul>
                         </Kartu>
                     </div>
+
+                    <Kartu judul="Tren Rata-Rata Skor 25 Biller (4 BLTH)" aksi={<ChipSelisih data={sistem.tren_rata} />}>
+                        <TrendLine data={sistem.tren_rata.map((t) => ({ kode: t.periode, label: t.label.split(' ')[0], nilai: t.nilai }))} lebar={880} tinggi={140} warna="sky" />
+                    </Kartu>
                     <ModalTutupPeriode open={tutup} onOpenChange={setTutup} kode={sistem.periode.kode} syarat={sistem.kesiapan_tutup} />
                 </div>
             )}

@@ -35,9 +35,9 @@ export const TINGKAT_ISSUE: Record<TingkatIssue, StatusMeta> = {
 };
 
 export const KATEGORI: Record<string, StatusMeta> = {
-    'Grade A': { label: 'Grade A', tone: 'success' },
-    'Perlu Evaluasi': { label: 'Evaluasi', tone: 'waiting' },
-    Kritis: { label: 'Kritis', tone: 'danger' },
+    Baik: { label: 'Baik', tone: 'success' },
+    Cukup: { label: 'Cukup', tone: 'info' },
+    'Perlu Pendampingan': { label: 'Perlu Pendampingan', tone: 'waiting' },
 };
 
 export function metaKategori(kategori: string | null | undefined): StatusMeta {
@@ -77,9 +77,9 @@ export const TONE_CLASS: Record<StatusTone, string> = {
 
 /** Warna angka skor menurut kategori dan peringkat (tabel Direktori dan Laporan). */
 export function warnaSkor(kategori: string | null | undefined): string {
-    if (kategori === 'Grade A') return 'text-success';
-    if (kategori === 'Perlu Evaluasi') return 'text-pln-yellow-ink';
-    if (kategori === 'Kritis') return 'text-pln-red';
+    if (kategori === 'Baik') return 'text-success';
+    if (kategori === 'Cukup') return 'text-sky-ink';
+    if (kategori === 'Perlu Pendampingan') return 'text-pln-yellow-ink';
     return 'text-ink';
 }
 

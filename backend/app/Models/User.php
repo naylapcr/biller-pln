@@ -28,6 +28,8 @@ class User extends Authenticatable
         'gagal_login',
         'terkunci_at',
         'last_login_at',
+        'foto_path',
+        'wajib_ganti_sandi',
     ];
 
     protected $hidden = [
@@ -44,6 +46,7 @@ class User extends Authenticatable
             'terkunci_at' => 'datetime',
             'last_login_at' => 'datetime',
             'password' => 'hashed',
+            'wajib_ganti_sandi' => 'boolean',
         ];
     }
 

@@ -33,9 +33,11 @@ export default function MonitoringAbsensi() {
         { header: 'NAMA BILLER', cell: ({ row }) => row.original.nama },
         { header: 'NIP', cell: ({ row }) => <span className="font-mono">{row.original.nip}</span> },
         { header: 'HADIR', cell: ({ row }) => <span className="font-bold text-success">{formatNumber(row.original.hadir)}</span> },
+        { header: 'TERLAMBAT', cell: ({ row }) => <span className={row.original.terlambat > 0 ? 'font-bold text-pln-yellow-ink' : undefined}>{formatNumber(row.original.terlambat)}</span> },
+        { header: 'PULANG CEPAT', cell: ({ row }) => formatNumber(row.original.pulang_cepat) },
         { header: 'IZIN', cell: ({ row }) => formatNumber(row.original.izin) },
         { header: 'SAKIT', cell: ({ row }) => formatNumber(row.original.sakit) },
-        { header: 'ALPA', cell: ({ row }) => <span className={row.original.alpa > 0 ? 'font-bold text-pln-red' : undefined}>{formatNumber(row.original.alpa)}</span> },
+        { header: 'ALPA (TIDAK ABSEN)', cell: ({ row }) => <span className={row.original.alpa > 0 ? 'font-bold text-pln-red' : undefined}>{formatNumber(row.original.alpa)}</span> },
         { header: 'KOREKSI SUPER ADMIN', cell: ({ row }) => (row.original.koreksi > 0 ? `${row.original.koreksi} koreksi` : '—') },
     ];
 
@@ -44,7 +46,7 @@ export default function MonitoringAbsensi() {
             <Head title="Monitoring Absensi" />
             <PageHeader
                 title={`Monitoring Absensi ${harian.length || 25} Biller`}
-                description="Pantauan harian & rekap bulanan kehadiran seluruh biller · Tidak memengaruhi skor"
+                description="Pantauan harian & rekap bulanan kehadiran seluruh biller · Kehadiran ikut skor kinerja biller"
                 actions={
                     <>
                         <StatusChip titik label="Mode Baca Saja" tone="sky" />

@@ -16,7 +16,13 @@ class PasswordUpdateRequest extends FormRequest
     {
         return [
             'current_password' => ['required', 'current_password'],
-            'password' => ['required', 'confirmed', Password::defaults(), 'different:current_password'],
+            'password' => ['required', 'confirmed', Password::defaults(), 'different:current_password',
+                function (string $atribut, mixed $nilai, \Closure $gagal) {
+                    $nilai = strtolower((string) $nilai);
+                    if ($nilai === strtolower((string) $this->user()?->username_nip) || str_contains($nilai, 'password')) {
+                        $gagal('Kata sandi baru tidak boleh sama dengan NIP/username atau memuat kata "password".');
+                    }
+                }],
         ];
     }
 

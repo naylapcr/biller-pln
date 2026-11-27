@@ -38,7 +38,7 @@ function UserCard() {
 
     return (
         <Link href={route('profil.edit')} className="flex items-center gap-3 rounded-2xl bg-white/85 p-3.5 hover:bg-white">
-            <UserAvatar name={user.nama} size={40} className={peran.avatar} />
+            <UserAvatar name={user.nama} src={user.foto_url} size={40} className={user.foto_url ? undefined : peran.avatar} />
             <span className="grid min-w-0 flex-1 justify-items-start gap-0.5">
                 <span className="block max-w-full truncate text-[13px] leading-4 font-bold text-ink">{user.nama}</span>
                 <span className="block max-w-full truncate font-mono text-[11px] leading-[13px] text-slate-mid">NIP: {user.biller?.nip ?? user.username_nip}</span>

@@ -15,6 +15,7 @@ use Database\Seeders\Support\ContohBerkasAcmt;
 use Illuminate\Database\Seeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Data awal SIPERMON:
@@ -44,10 +45,10 @@ class DatabaseSeeder extends Seeder
         $sandi = Hash::make('password');
 
         $super = User::updateOrCreate(['username_nip' => 'superadmin'], [
-            'nama' => 'Super Admin SIPERMON', 'password' => $sandi, 'role' => Role::SuperAdmin, 'is_active' => true,
+            'nama' => 'Super Admin SIPERMON', 'password' => $sandi, 'wajib_ganti_sandi' => true, 'role' => Role::SuperAdmin, 'is_active' => true,
         ]);
         $koordinator = User::updateOrCreate(['username_nip' => 'koordinator'], [
-            'nama' => 'Koordinator Admin ULP Kota Barat', 'password' => $sandi, 'role' => Role::Admin, 'is_active' => true,
+            'nama' => 'Koordinator Admin ULP Kota Barat', 'password' => $sandi, 'wajib_ganti_sandi' => true, 'role' => Role::Admin, 'is_active' => true,
         ]);
 
         foreach (self::PETUGAS as [$login, $kode]) {
@@ -58,29 +59,32 @@ class DatabaseSeeder extends Seeder
                 'is_active' => true,
             ]);
             User::updateOrCreate(['username_nip' => $biller->login_acmt], [
-                'nama' => $biller->nama, 'password' => $sandi, 'role' => Role::Biller, 'biller_id' => $biller->id, 'is_active' => true,
+                'nama' => $biller->nama, 'password' => $sandi, 'wajib_ganti_sandi' => true, 'role' => Role::Biller, 'biller_id' => $biller->id, 'is_active' => true,
             ]);
         }
 
         $periode = Period::kode('202611') ?? app(LayananPeriode::class)->buka('202611', $super);
 
         if (filter_var(env('SIPERMON_DEMO', true), FILTER_VALIDATE_BOOL) && ! $periode->batches()->exists()) {
+            $this->absensiDemo(); // lebih dulu agar skor demo memuat nilai kehadiran
             $this->dataDemo($periode, $koordinator); // unggah dan commit khusus Koordinator
-            $this->absensiDemo();
         }
     }
 
     /**
-     * Absensi demo Biller dan Koordinator dari awal bulan ini sampai kemarin (hari kerja saja):
-     * sebagian besar hadir, beberapa izin/sakit, dan beberapa alpa dari sistem.
+     * Absensi demo Biller dan Koordinator dari awal bulan lalu (bulan kerja BLTH ini) sampai kemarin (hari kerja saja):
+     * sebagian besar hadir (sesekali terlambat atau pulang cepat), beberapa izin/sakit berlampiran, dan beberapa
+     * alpa dari sistem. Lampiran demo berupa satu PDF contoh di disk unggahan.
      */
     private function absensiDemo(): void
     {
         mt_srand(17);
         $hariIni = LayananAbsensi::hariIni();
         $baris = [];
+        $lampiran = 'absensi/demo/surat-contoh.pdf';
+        Storage::disk(LayananAbsensi::disk())->put($lampiran, "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
         $orang = User::query()->whereIn('role', [Role::Biller->value, Role::Admin->value])->pluck('id');
-        for ($t = $hariIni->startOfMonth(); $t->lessThan($hariIni); $t = $t->addDay()) {
+        for ($t = $hariIni->startOfMonth()->subMonthNoOverflow(); $t->lessThan($hariIni); $t = $t->addDay()) {
             if (! LayananAbsensi::hariKerja($t)) {
                 continue;
             }
@@ -92,14 +96,24 @@ class DatabaseSeeder extends Seeder
                     $acak <= 9 => StatusAbsensi::Sakit,
                     default => StatusAbsensi::Hadir,
                 };
-                $jam = $t->setTime(7, mt_rand(0, 59));
+                $hadir = $status === StatusAbsensi::Hadir;
+                $jam = $t->setTime(7, mt_rand(5, 40));
+                $pulang = $t->setTime(16, mt_rand(20, 59));
                 $baris[] = [
                     'user_id' => $id,
                     'tanggal' => $t->toDateString(),
                     'status' => $status->value,
                     'absen_at' => $status === StatusAbsensi::Alpa ? null : $jam->toDateTimeString(),
-                    'lat' => $status === StatusAbsensi::Hadir ? 0.5 + mt_rand(0, 9999) / 100000 : null,
-                    'lng' => $status === StatusAbsensi::Hadir ? 101.4 + mt_rand(0, 9999) / 100000 : null,
+                    'terlambat_menit' => $hadir ? max(0, $jam->minute - 30) : null,
+                    'pulang_at' => $hadir ? $pulang->toDateTimeString() : null,
+                    'pulang_cepat_menit' => $hadir ? max(0, 30 - $pulang->minute) : null,
+                    'lat' => $hadir ? 0.5 + mt_rand(0, 9999) / 100000 : null,
+                    'lng' => $hadir ? 101.4 + mt_rand(0, 9999) / 100000 : null,
+                    'jarak_m' => $hadir ? mt_rand(80, 950) / 10 : null,
+                    'pulang_jarak_m' => $hadir ? mt_rand(80, 950) / 10 : null,
+                    'ip' => $status === StatusAbsensi::Alpa ? null : '10.18.111.'.mt_rand(10, 250),
+                    'perangkat' => $status === StatusAbsensi::Alpa ? null : 'Chrome · Android',
+                    'foto_path' => in_array($status, [StatusAbsensi::Izin, StatusAbsensi::Sakit], true) ? $lampiran : null,
                     'keterangan' => match ($status) {
                         StatusAbsensi::Izin => 'Keperluan keluarga',
                         StatusAbsensi::Sakit => 'Demam',

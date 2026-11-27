@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\JenisMeter;
 use App\Enums\Role;
 use App\Http\Controllers\Concerns\PilihPeriode;
 use App\Services\LaporanKinerja;
@@ -34,15 +33,13 @@ class DashboardController extends Controller
 
         $filter = $request->validate([
             'hari_baca' => ['nullable', 'string', 'size:1', Rule::in(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'J'])],
-            'jenis_meter' => ['nullable', Rule::enum(JenisMeter::class)],
         ]);
 
         return Inertia::render('Koordinator/Dashboard', [
             'periode' => $this->infoPeriode($periode),
             'periodeOptions' => $this->opsiPeriode(),
             'filters' => (object) $filter,
-            'jenisMeterOptions' => JenisMeter::options(),
-            'ringkasan' => $periode ? $laporan->ringkasan($periode, $filter['hari_baca'] ?? null, $filter['jenis_meter'] ?? null) : null,
+            'ringkasan' => $periode ? $laporan->ringkasan($periode, $filter['hari_baca'] ?? null) : null,
             'top' => $periode ? $laporan->leaderboard($periode, 'top') : [],
             'bottom' => $periode ? $laporan->leaderboard($periode, 'bottom') : [],
             'tren' => $periode ? $laporan->trenHarian($periode) : [],

@@ -16,7 +16,12 @@ use Illuminate\Support\Facades\DB;
  * Skor bulanan biller (PRD 6.1). Selalu dihitung ulang penuh per periode dari tabel rincian,
  * sehingga hasilnya sama berapa kali pun dijalankan.
  *
- *   Skor Akhir     = (1/n) Σ Nilai_m + Bonus_J            n = modul yang punya data untuk biller itu
+ *   Skor Akhir     = min(100; (1 − b_H) × RataModul + b_H × Nilai_Hadir + Bonus_J)
+ *   RataModul      = (1/n) Σ Nilai_m                      n = modul yang punya data untuk biller itu
+ *   Nilai_Hadir    = rata-rata nilai hari kerja tercatat di bulan kerja (bulan sebelum BLTH):
+ *                    hadir tepat waktu 100 · hadir terlambat, pulang cepat, atau tanpa absen pulang = nilai_terlambat
+ *                    · izin/sakit berlampiran 100 · izin/sakit tanpa lampiran (koreksi) = nilai_izin_tanpa_foto · alpa 0.
+ *                    Biller tanpa catatan absensi di bulan itu: b_H tidak dipakai (skor = RataModul + Bonus_J).
  *   Nilai_pasca    = (w_R·R + w_E·E + w_K·K) × (1 − ρ_BU) × (1 − ρ_AP2T)
  *     R            = TERBACA ÷ JMLPLG × 100 (Hari A–G dan J, Tunggal + Ganda Industri)
  *     E            = JML FOTO BERHASIL ÷ TERBACA × 100
@@ -26,10 +31,11 @@ use Illuminate\Support\Facades\DB;
  *   Nilai_pra      = (R + E) ÷ 2
  *     R            = KDBACA normal dan dibaca sesuai jadwal ÷ pemeriksaan × 100
  *     E            = koordinat valid ÷ pemeriksaan × 100
- *   Bonus_J        = bobot_bonus_j × TERBACA_J ÷ JMLPLG_J (0 bila tanpa pelanggan Hari J)
+ *   Bonus_J        = min(bobot_bonus_j; TERBACA_J ÷ JMLPLG seluruh hari baca biller itu × 100)
+ *                    Satu pelanggan Hari J bernilai sama dengan satu pelanggan biasa (5 dari 1.493 → +0,33),
+ *                    sehingga tidak ada untungnya memindahkan bacaan ke Hari J; 0 bila tanpa pelanggan Hari J.
  *
  * Peringkat: final_score menurun; bila sama, rasio Baca Ulang lebih kecil di atas, lalu terbaca lebih banyak.
- * Absensi tidak dipakai dalam skor.
  */
 class PenghitungSkor
 {
@@ -65,8 +71,10 @@ class PenghitungSkor
 
         $billerIds = $pasca->keys()->merge($pra->keys())->unique()->values();
         $sekarang = now();
+        $kehadiran = $this->kehadiran($periode, $aturan);
+        $bobotHadir = (float) ($aturan['bobot_kehadiran'] ?? 0) / 100;
 
-        $baris = $billerIds->map(function ($billerId) use ($pasca, $hariAktif, $pra, $salahBu, $ap2t, $aturan) {
+        $baris = $billerIds->map(function ($billerId) use ($pasca, $hariAktif, $pra, $salahBu, $ap2t, $aturan, $kehadiran, $bobotHadir) {
             $modul = [];
             $bonusJ = 0.0;
             $rasioBu = 0.0;
@@ -97,7 +105,7 @@ class PenghitungSkor
 
                 $jmlJ = (int) $p->jml_plg_j;
                 $terbacaJ = (int) $p->terbaca_j;
-                $bonusJ = $jmlJ > 0 ? (float) $aturan['bobot_bonus_j'] * $terbacaJ / $jmlJ : 0.0;
+                $bonusJ = $jmlJ > 0 ? min((float) $aturan['bobot_bonus_j'], $terbacaJ / (int) $p->jml_plg * 100) : 0.0;
 
                 $modul['pascabayar'] = [
                     'jml_plg' => (int) $p->jml_plg,
@@ -119,6 +127,7 @@ class PenghitungSkor
                         'jml_plg' => $jmlJ,
                         'terbaca' => $terbacaJ,
                         'persen_tuntas' => $jmlJ > 0 ? round($terbacaJ / $jmlJ * 100, 1) : null,
+                        'jml_plg_total' => (int) $p->jml_plg,
                         'nilai' => round($bonusJ, 2),
                     ],
                     'nilai' => round($nilai, 2),
@@ -147,6 +156,11 @@ class PenghitungSkor
             }
             unset($m);
 
+            $hadir = $kehadiran[$billerId] ?? null;
+            $dasarAkhir = $hadir !== null && $bobotHadir > 0
+                ? (1 - $bobotHadir) * $rata + $bobotHadir * $hadir['nilai']
+                : $rata;
+
             return [
                 'biller_id' => (int) $billerId,
                 'nilai_per_modul' => $modul,
@@ -156,8 +170,10 @@ class PenghitungSkor
                 'rasio_bu' => round($rasioBu, 4),
                 'rasio_ap2t' => round($rasioAp2t, 4),
                 'rata_rata_modul' => round($rata, 2),
+                'nilai_kehadiran' => $hadir['nilai'] ?? null,
+                'kehadiran' => $hadir,
                 'bonus_hari_j' => round($bonusJ, 2),
-                'final_score' => round($rata + $bonusJ, 2),
+                'final_score' => round(min(100, $dasarAkhir + $bonusJ), 2),
                 'terbaca' => $terbaca,
             ];
         });
@@ -186,14 +202,79 @@ class PenghitungSkor
         return MonthlyScore::query()->where('period_id', $periode->id)->orderBy('peringkat')->get();
     }
 
-    /** Grade A ≥ ambang_grade_a, Kritis < ambang_kritis, selain itu Perlu Evaluasi. */
+    /** Baik ≥ ambang_grade_a, Perlu Pendampingan < ambang_kritis, selain itu Cukup. */
     public static function kategori(float $skor, array $aturan): string
     {
         return match (true) {
-            $skor >= (float) $aturan['ambang_grade_a'] => 'Grade A',
-            $skor < (float) $aturan['ambang_kritis'] => 'Kritis',
-            default => 'Perlu Evaluasi',
+            $skor >= (float) $aturan['ambang_grade_a'] => 'Baik',
+            $skor < (float) $aturan['ambang_kritis'] => 'Perlu Pendampingan',
+            default => 'Cukup',
         };
+    }
+
+    /** Bulan kerja periode: bulan sebelum BLTH (BLTH 202611 → Oktober 2026), sama dengan jadwal prabayar. */
+    public static function bulanKehadiran(Period $periode): CarbonImmutable
+    {
+        return $periode->awalBulan()->subMonthNoOverflow()->startOfMonth();
+    }
+
+    /**
+     * Nilai kehadiran per biller dari absensi hari kerja di bulan kerja periode.
+     *
+     * @return array<int, array{bulan: string, hari: int, hadir: int, izin: int, sakit: int, alpa: int, berfoto: int, nilai: float}>
+     */
+    private function kehadiran(Period $periode, array $aturan): array
+    {
+        $bulan = self::bulanKehadiran($periode);
+        $tanpaFoto = (float) ($aturan['nilai_izin_tanpa_foto'] ?? 50);
+        $nilaiTelat = (float) ($aturan['nilai_terlambat'] ?? 75);
+        $hariIni = LayananAbsensi::hariIni()->toDateString();
+        $hasil = [];
+
+        DB::table('attendances')->join('users', 'users.id', '=', 'attendances.user_id')
+            ->whereNotNull('users.biller_id')
+            ->whereDate('attendances.tanggal', '>=', $bulan->toDateString())
+            ->whereDate('attendances.tanggal', '<=', $bulan->endOfMonth()->toDateString())
+            ->orderBy('attendances.id')
+            ->select(['attendances.id', 'users.biller_id', 'attendances.tanggal', 'attendances.status', 'attendances.foto_path',
+                'attendances.absen_at', 'attendances.terlambat_menit', 'attendances.pulang_at', 'attendances.pulang_cepat_menit'])
+            ->chunk(2000, function ($rows) use (&$hasil, $tanpaFoto, $nilaiTelat, $hariIni) {
+                foreach ($rows as $r) {
+                    $tanggal = CarbonImmutable::parse($r->tanggal, config('app.timezone'));
+                    if (! LayananAbsensi::hariKerja($tanggal)) {
+                        continue;
+                    }
+                    $h = &$hasil[$r->biller_id];
+                    $h ??= ['hari' => 0, 'hadir' => 0, 'terlambat' => 0, 'pulang_cepat' => 0, 'tanpa_pulang' => 0,
+                        'izin' => 0, 'sakit' => 0, 'alpa' => 0, 'berfoto' => 0, '_poin' => 0.0];
+                    $berfoto = $r->foto_path !== null;
+                    $h['hari']++;
+                    $h[$r->status] = ($h[$r->status] ?? 0) + 1;
+                    $kurang = false;
+                    if ($r->status === 'hadir') {
+                        $telat = (int) $r->terlambat_menit > 0;
+                        $cepat = (int) $r->pulang_cepat_menit > 0;
+                        // Hari ini belum selesai, jadi belum absen pulang tidak dihitung. Hadir dari koreksi (tanpa jam masuk) dianggap penuh.
+                        $tanpaPulang = $r->absen_at !== null && $r->pulang_at === null && $tanggal->toDateString() < $hariIni;
+                        $h['terlambat'] += (int) $telat;
+                        $h['pulang_cepat'] += (int) $cepat;
+                        $h['tanpa_pulang'] += (int) $tanpaPulang;
+                        $kurang = $telat || $cepat || $tanpaPulang;
+                    }
+                    $h['_poin'] += match ($r->status) {
+                        'hadir' => $kurang ? $nilaiTelat : 100.0,
+                        'izin', 'sakit' => $berfoto ? 100.0 : $tanpaFoto,
+                        default => 0.0,
+                    };
+                    if ($berfoto && $r->status !== 'hadir') {
+                        $h['berfoto']++;
+                    }
+                    unset($h);
+                }
+            });
+
+        return array_map(fn (array $h) => ['bulan' => $bulan->format('Y-m')] + array_diff_key($h, ['_poin' => 0])
+            + ['nilai' => round($h['_poin'] / $h['hari'], 2)], $hasil);
     }
 
     /**

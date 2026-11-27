@@ -33,6 +33,8 @@ class HandleInertiaRequests extends Middleware
                     'nama' => $user->nama,
                     'role' => $user->role->value,
                     'role_label' => $user->role->label(),
+                    'foto_url' => $user->foto_path ? route('pengguna.foto', ['user' => $user->id, 'v' => substr(md5($user->foto_path), 0, 8)]) : null,
+                    'wajib_ganti_sandi' => (bool) $user->wajib_ganti_sandi,
                     'biller' => $user->biller ? [
                         'id' => $user->biller->id,
                         'nip' => $user->biller->nip,

@@ -15,7 +15,8 @@ class Attendance extends Model
     protected $table = 'attendances';
 
     protected $fillable = [
-        'user_id', 'tanggal', 'status', 'absen_at', 'lat', 'lng', 'keterangan', 'sumber', 'dikoreksi_oleh', 'alasan_diubah',
+        'user_id', 'tanggal', 'status', 'absen_at', 'terlambat_menit', 'lat', 'lng', 'jarak_m', 'akurasi_m', 'ip', 'perangkat',
+        'pulang_at', 'pulang_cepat_menit', 'pulang_lat', 'pulang_lng', 'pulang_jarak_m', 'pulang_ip', 'keterangan', 'foto_path', 'sumber', 'dikoreksi_oleh', 'alasan_diubah',
     ];
 
     protected function casts(): array
@@ -26,6 +27,14 @@ class Attendance extends Model
             'absen_at' => 'datetime',
             'lat' => 'float',
             'lng' => 'float',
+            'jarak_m' => 'float',
+            'akurasi_m' => 'float',
+            'terlambat_menit' => 'integer',
+            'pulang_at' => 'datetime',
+            'pulang_cepat_menit' => 'integer',
+            'pulang_lat' => 'float',
+            'pulang_lng' => 'float',
+            'pulang_jarak_m' => 'float',
         ];
     }
 

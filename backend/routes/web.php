@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AbsensiController;
+use App\Http\Controllers\AbsensiFotoController;
 use App\Http\Controllers\AbsensiSayaController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\DashboardController;
@@ -30,6 +31,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/profil', [ProfileController::class, 'edit'])->name('profil.edit');
     Route::patch('/profil', [ProfileController::class, 'update'])->name('profil.update');
     Route::put('/profil/password', [ProfileController::class, 'updatePassword'])->name('profil.password');
+    Route::post('/profil/foto', [ProfileController::class, 'updateFoto'])->middleware('throttle:10,1')->name('profil.foto');
+    Route::delete('/profil/foto', [ProfileController::class, 'hapusFoto'])->name('profil.foto.hapus');
+    Route::get('/pengguna/{user}/foto', [ProfileController::class, 'foto'])->name('pengguna.foto');
+    Route::get('/absensi/foto/{attendance}', AbsensiFotoController::class)->name('absensi.foto');
 
     // Biller: hanya membaca skor, rincian, histori, dan peringkat miliknya; absen harian sendiri.
     Route::middleware('role:biller')->prefix('saya')->name('saya.')->group(function () {
@@ -37,6 +42,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/skor', [SayaController::class, 'skor'])->name('skor');
         Route::get('/absensi', [AbsensiSayaController::class, 'index'])->name('absensi');
         Route::post('/absensi', [AbsensiSayaController::class, 'store'])->middleware('throttle:20,1')->name('absensi.store');
+        Route::post('/absensi/pulang', [AbsensiSayaController::class, 'pulang'])->middleware('throttle:20,1')->name('absensi.pulang');
         Route::get('/histori-wo', [SayaController::class, 'historiWo'])->name('histori-wo');
         Route::get('/leaderboard', [SayaController::class, 'leaderboard'])->name('leaderboard');
     });
@@ -63,6 +69,7 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/absensi/saya', [AbsensiSayaController::class, 'index'])->name('absensi.saya');
         Route::post('/absensi/saya', [AbsensiSayaController::class, 'store'])->middleware('throttle:20,1')->name('absensi.saya.store');
+        Route::post('/absensi/saya/pulang', [AbsensiSayaController::class, 'pulang'])->middleware('throttle:20,1')->name('absensi.saya.pulang');
         Route::get('/absensi', [AbsensiController::class, 'index'])->name('absensi.index');
 
         Route::get('/laporan', [LaporanController::class, 'index'])->name('laporan.index');

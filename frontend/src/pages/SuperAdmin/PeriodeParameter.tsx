@@ -1,5 +1,5 @@
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { Calendar, LoaderCircle } from 'lucide-react';
+import { Calendar, LoaderCircle, LocateFixed } from 'lucide-react';
 import { useState } from 'react';
 
 import { ChipSyarat, type SyaratTutup } from '@/components/superadmin/KartuKesiapanTutup';
@@ -30,6 +30,14 @@ interface Parameter {
     prabayar_mulai: number;
     prabayar_selesai: number;
     bobot_bonus_j: number;
+    bobot_kehadiran: number;
+    nilai_izin_tanpa_foto: number;
+    nilai_terlambat: number;
+    jam_masuk: string;
+    jam_pulang: string;
+    kantor_lat: number | null;
+    kantor_lng: number | null;
+    radius_absen_m: number;
     ambang_grade_a: number;
     ambang_kritis: number;
     jumlah_top: number;
@@ -109,7 +117,7 @@ export default function PeriodeParameter() {
                         kode={periode.kode}
                         nama={periode.nama}
                         jumlah={periode.jumlah_skor}
-                        bobot={`${formatNumber(parameter.w_realisasi)}/${formatNumber(parameter.w_eviden)}/${formatNumber(parameter.w_kecepatan)} · Bonus J +${formatNumber(parameter.bobot_bonus_j, 1)} · Ambang ${formatNumber(parameter.ambang_grade_a)}/${formatNumber(parameter.ambang_kritis)}`}
+                        bobot={`${formatNumber(parameter.w_realisasi)}/${formatNumber(parameter.w_eviden)}/${formatNumber(parameter.w_kecepatan)} · Kehadiran ${formatNumber(parameter.bobot_kehadiran ?? 0)}% · Bonus J +${formatNumber(parameter.bobot_bonus_j, 1)} · Ambang ${formatNumber(parameter.ambang_grade_a)}/${formatNumber(parameter.ambang_kritis)}`}
                         ringkasan={ringkasanFinal}
                     />
                 </div>
@@ -149,7 +157,7 @@ export default function PeriodeParameter() {
                         BLTH {periode.kode} ({periode.nama})
                     </p>
                     <StatusChip titik label="Status: Terbuka" tone="success" />
-                    <p className="min-w-0 flex-1 basis-60 text-[11px] font-bold text-pln-blue xl:text-right">Formula: Skor Akhir = Rata-rata Modul (0–100) + Bonus Hari J</p>
+                    <p className="min-w-0 flex-1 basis-60 text-[11px] font-bold text-pln-blue xl:text-right">Formula: Skor Akhir = (100% − b) × Rata-rata Modul + b × Kehadiran + Bonus Hari J (maks. 100)</p>
                     {daftar.length > 1 && pilihPeriode}
                     <Button variant="secondary" onClick={() => setBuka(true)}>
                         + Buka Periode
@@ -160,7 +168,7 @@ export default function PeriodeParameter() {
 
                 <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-[1.5px] border-[#ef4444] bg-error-row px-5 py-[18px]">
                     <div className="min-w-0 flex-1 basis-96">
-                        <h2 className="text-section-title text-error-deep">4. Gerbang Penutupan Periode (Tutup Periode BLTH {periode.kode})</h2>
+                        <h2 className="text-section-title text-error-deep">5. Gerbang Penutupan Periode (Tutup Periode BLTH {periode.kode})</h2>
                         <p className="mt-0.5 mb-3 text-xs text-error-deep">Setelah ditutup, skor final dikunci (is_final = true). Unggah data, rollback, dan ubah parameter akan dinonaktifkan.</p>
                         <ChipSyarat syarat={kesiapan} />
                     </div>
@@ -178,9 +186,30 @@ export default function PeriodeParameter() {
 
 PeriodeParameter.layout = layoutSuperAdmin;
 
-/** Tiga kartu parameter: bobot pascabayar, bonus Hari J dan jadwal prabayar, ambang kategori. */
+/** Empat kartu parameter: bobot pascabayar, bonus Hari J dan jadwal prabayar, kehadiran dan lokasi absen, ambang kategori. */
 function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; parameter: Parameter; jadwal: [string, string]; diubah: Props['diubah'] }) {
-    const form = useForm({ ...parameter, kdbaca_normal: parameter.kdbaca_normal.join(', ') });
+    const form = useForm({
+        ...parameter,
+        kdbaca_normal: parameter.kdbaca_normal.join(', '),
+        kantor_lat: parameter.kantor_lat === null ? '' : String(parameter.kantor_lat),
+        kantor_lng: parameter.kantor_lng === null ? '' : String(parameter.kantor_lng),
+    });
+    const [lokasiSaya, setLokasiSaya] = useState<{ memuat: boolean; pesan: string | null }>({ memuat: false, pesan: null });
+    const pakaiLokasiSaya = () => {
+        if (!('geolocation' in navigator)) {
+            setLokasiSaya({ memuat: false, pesan: 'Browser ini tidak mendukung lokasi.' });
+            return;
+        }
+        setLokasiSaya({ memuat: true, pesan: null });
+        navigator.geolocation.getCurrentPosition(
+            (p) => {
+                form.setData((d) => ({ ...d, kantor_lat: p.coords.latitude.toFixed(7), kantor_lng: p.coords.longitude.toFixed(7) }));
+                setLokasiSaya({ memuat: false, pesan: `Akurasi ±${Math.round(p.coords.accuracy)} m. Simpan parameter untuk menerapkan.` });
+            },
+            () => setLokasiSaya({ memuat: false, pesan: 'Lokasi tidak didapat. Izinkan akses lokasi lalu coba lagi.' }),
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+        );
+    };
     const total = Number(form.data.w_realisasi) + Number(form.data.w_eviden) + Number(form.data.w_kecepatan);
 
     const isian = (k: keyof Parameter, opsi: { step?: string; satuan?: string; className?: string } = {}) => (
@@ -204,7 +233,12 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
     );
 
     const simpan = () => {
-        form.transform((d) => ({ ...d, kdbaca_normal: String(d.kdbaca_normal).split(',').map((s) => s.trim()).filter(Boolean) }));
+        form.transform((d) => ({
+            ...d,
+            kdbaca_normal: String(d.kdbaca_normal).split(',').map((s) => s.trim()).filter(Boolean),
+            kantor_lat: String(d.kantor_lat).trim() === '' ? null : d.kantor_lat,
+            kantor_lng: String(d.kantor_lng).trim() === '' ? null : d.kantor_lng,
+        }));
         form.put(route('pengaturan.periode.rules', kode), { preserveScroll: true });
     };
 
@@ -233,7 +267,8 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
 
                 <Kartu judul="2. Bonus Hari J (Wajib) & Jadwal Prabayar">
                     <p className="text-[11px] leading-[14px] text-muted-ink">
-                        Bonus Hari J ditambahkan di luar rata-rata modul. Jadwal prabayar periode ini: {formatTanggal(jadwal[0], 'd MMM')} – {formatTanggal(jadwal[1], 'd MMM yyyy')}.
+                        Bonus = pelanggan Hari J terbaca ÷ total pelanggan biller × 100, paling besar sesuai bobot (5 dari 1.493 → +0,33). Jadwal prabayar periode ini:{' '}
+                        {formatTanggal(jadwal[0], 'd MMM')} – {formatTanggal(jadwal[1], 'd MMM yyyy')}.
                     </p>
                     <div className="grid grid-cols-2 gap-2.5">
                         {angka('bobot_bonus_j', 'Bobot Maks. Bonus Hari J *', { satuan: 'Poin' })}
@@ -247,8 +282,47 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                 </Kartu>
             </div>
 
+            <Kartu judul="3. Kehadiran & Lokasi Absen">
+                <p className="text-[11px] leading-[14px] text-muted-ink">
+                    Nilai kehadiran = rata-rata hari kerja di bulan kerja (bulan sebelum BLTH): hadir tepat waktu 100; terlambat, pulang cepat, atau tidak absen pulang sesuai
+                    isian; izin/sakit berlampiran 100 (tanpa lampiran sesuai isian); alpa 0. Absen masuk dan pulang hanya diterima dalam radius dari titik kantor.
+                </p>
+                <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                    {angka('bobot_kehadiran', 'Bobot Kehadiran *', { satuan: '%' })}
+                    {angka('nilai_terlambat', 'Terlambat / Pulang Cepat', { satuan: '/100' })}
+                    {angka('nilai_izin_tanpa_foto', 'Izin/Sakit tanpa Lampiran', { satuan: '/100' })}
+                    {angka('radius_absen_m', 'Radius Absen', { step: '1', satuan: 'm' })}
+                    {(['jam_masuk', 'jam_pulang'] as const).map((k) => (
+                        <FormField key={k} id={k} label={k === 'jam_masuk' ? 'Jam Masuk (tanpa toleransi)' : 'Jam Pulang'} error={form.errors[k]}>
+                            <Input id={k} type="time" className="font-mono font-bold" value={String(form.data[k] ?? '')} onChange={(e) => form.setData(k, e.target.value)} />
+                        </FormField>
+                    ))}
+                    {angka('kantor_lat', 'Lintang Kantor (lat)', { step: 'any' })}
+                    {angka('kantor_lng', 'Bujur Kantor (lng)', { step: 'any' })}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    <Button type="button" variant="secondary" onClick={pakaiLokasiSaya} disabled={lokasiSaya.memuat}>
+                        {lokasiSaya.memuat ? <LoaderCircle className="animate-spin" /> : <LocateFixed />}
+                        Pakai Lokasi Saya Sekarang
+                    </Button>
+                    {form.data.kantor_lat !== '' && form.data.kantor_lng !== '' && (
+                        <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${form.data.kantor_lat},${form.data.kantor_lng}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-semibold text-pln-blue hover:underline"
+                        >
+                            Cek titik di Google Maps
+                        </a>
+                    )}
+                    <p className="text-[11px] text-muted-ink">
+                        {lokasiSaya.pesan ?? (form.data.kantor_lat === '' ? 'Titik kantor belum diisi: absen hadir ditolak sampai diisi.' : 'Buka halaman ini dari kantor, lalu tekan tombol di samping.')}
+                    </p>
+                </div>
+            </Kartu>
+
             <Kartu
-                judul="3. Ambang Kategori Penilaian (Wajib Sebelum Tutup Periode)"
+                judul="4. Ambang Kategori Penilaian (Wajib Sebelum Tutup Periode)"
                 aksi={
                     <Button type="submit" disabled={form.processing}>
                         {form.processing && <LoaderCircle className="animate-spin" />}
@@ -259,7 +333,7 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                 <div className="grid gap-3.5 md:grid-cols-3">
                     <div className="rounded-xl border border-[#86efac] bg-success-row p-4">
                         <label htmlFor="ambang_grade_a" className="text-[11px] font-bold text-success-ink">
-                            Grade A (Unggul)
+                            Baik
                         </label>
                         <div className="mt-1 flex items-center gap-2 font-mono text-base font-bold whitespace-nowrap text-success-ink">
                             Skor ≥ {isian('ambang_grade_a', { className: 'h-9 w-24 bg-white pr-3 text-base text-success-ink' })}
@@ -267,14 +341,14 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                         {form.errors.ambang_grade_a && <p className="mt-1 text-[11px] text-error-ink">{form.errors.ambang_grade_a}</p>}
                     </div>
                     <div className="rounded-xl border border-pln-yellow-line bg-pln-yellow-row p-4">
-                        <p className="text-[11px] font-bold text-pln-yellow-ink">Perlu Evaluasi</p>
+                        <p className="text-[11px] font-bold text-pln-yellow-ink">Cukup</p>
                         <p className="mt-1 flex h-9 items-center font-mono text-base font-bold text-pln-yellow-ink">
                             {formatNumber(Number(form.data.ambang_kritis), 1)} – {formatNumber(Number(form.data.ambang_grade_a) - 0.1, 1)}
                         </p>
                     </div>
                     <div className="rounded-xl border border-error-line bg-error-row p-4">
                         <label htmlFor="ambang_kritis" className="text-[11px] font-bold text-error-ink">
-                            Kritis (Pembinaan Khusus)
+                            Perlu Pendampingan
                         </label>
                         <div className="mt-1 flex items-center gap-2 font-mono text-base font-bold whitespace-nowrap text-error-ink">
                             Skor &lt; {isian('ambang_kritis', { className: 'h-9 w-24 bg-white pr-3 text-base text-error-ink' })}
@@ -283,8 +357,8 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                     </div>
                 </div>
                 <div className="grid max-w-sm grid-cols-2 gap-2.5">
-                    {angka('jumlah_top', 'Jumlah Top', { step: '1' })}
-                    {angka('jumlah_bottom', 'Jumlah Bottom', { step: '1' })}
+                    {angka('jumlah_top', 'Jumlah Teratas', { step: '1' })}
+                    {angka('jumlah_bottom', 'Jumlah Terbawah', { step: '1' })}
                 </div>
             </Kartu>
         </form>

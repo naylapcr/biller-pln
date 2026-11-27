@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 
+import { ChipTepatWaktu, JamMasukPulang, JarakKantor, LinkFoto } from '@/components/shared/BuktiAbsensi';
 import DataTable, { type ColumnDef } from '@/components/ui/DataTable';
 import Kartu from '@/components/ui/Kartu';
 import StatusChip from '@/components/ui/StatusChip';
@@ -8,13 +9,15 @@ import { formatNumber, formatTanggal } from '@/lib/format';
 import { STATUS_ABSENSI, type StatusTone } from '@/lib/status';
 import type { BarisAbsensi, RingkasanAbsensi } from '@/types';
 
-/** Kartu Ringkasan Bulan Ini: Hadir, Izin, Sakit, Alpa. */
+/** Kartu Ringkasan Bulan Ini: Hadir, Terlambat, Pulang Cepat, Izin, Sakit, Alpa (tidak absen). */
 export function RingkasanBulan({ bulan, ringkasan, className }: { bulan: string; ringkasan: RingkasanAbsensi; className?: string }) {
     const baris: [string, number, StatusTone][] = [
         ['Hadir', ringkasan.hadir, 'success'],
+        ['Terlambat', ringkasan.terlambat ?? 0, 'waiting'],
+        ['Pulang Cepat', ringkasan.pulang_cepat ?? 0, 'waiting'],
         ['Izin', ringkasan.izin, 'info'],
-        ['Sakit', ringkasan.sakit, 'waiting'],
-        ['Alpa (Lewat 23:59)', ringkasan.alpa, 'danger'],
+        ['Sakit', ringkasan.sakit, 'info'],
+        ['Alpa (Tidak Absen)', ringkasan.alpa, 'danger'],
     ];
 
     return (
@@ -29,36 +32,29 @@ export function RingkasanBulan({ bulan, ringkasan, className }: { bulan: string;
     );
 }
 
-/** Riwayat absensi sendiri (TANGGAL, STATUS, JAM SERVER, KOORDINAT LOKASI, KETERANGAN, SUMBER). */
+/** Riwayat absensi sendiri (TANGGAL, STATUS, MASUK – PULANG, LOKASI, LAMPIRAN, KETERANGAN). */
 export default function RiwayatAbsensi({ bulan, riwayat }: { bulan: string; riwayat: BarisAbsensi[] }) {
     const columns: ColumnDef<BarisAbsensi>[] = [
         { header: 'TANGGAL', cell: ({ row }) => <span className="whitespace-nowrap">{formatTanggal(row.original.tanggal, 'd MMM yyyy')}</span> },
-        { header: 'STATUS', cell: ({ row }) => <StatusChip {...STATUS_ABSENSI[row.original.status]} titik /> },
         {
-            header: 'JAM SERVER (WIB)',
-            cell: ({ row }) => <span className="font-mono whitespace-nowrap">{row.original.absen_at ? `${formatTanggal(row.original.absen_at, 'HH:mm:ss')} WIB` : '–'}</span>,
+            header: 'STATUS',
+            cell: ({ row: { original: a } }) => (
+                <span className="flex flex-wrap gap-1">
+                    <StatusChip {...STATUS_ABSENSI[a.status]} titik />
+                    <ChipTepatWaktu terlambat={a.terlambat_menit} cepat={a.pulang_cepat_menit} />
+                </span>
+            ),
         },
+        { header: 'MASUK – PULANG', cell: ({ row: { original: a } }) => <JamMasukPulang masuk={a.absen_at} pulang={a.pulang_at} status={a.status} /> },
         {
-            header: 'KOORDINAT LOKASI',
-            cell: ({ row: { original: a } }) =>
-                a.lat !== null && a.lng !== null ? (
-                    <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lng}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-mono whitespace-nowrap hover:text-pln-blue hover:underline"
-                    >
-                        {a.lat.toFixed(4)}, {a.lng.toFixed(4)}
-                    </a>
-                ) : (
-                    'Tidak dibagikan'
-                ),
+            header: 'LOKASI',
+            cell: ({ row: { original: a } }) => <JarakKantor lat={a.lat} lng={a.lng} jarak={a.jarak_m} />,
         },
+        { header: 'LAMPIRAN', cell: ({ row }) => <LinkFoto url={row.original.foto_url} pdf={row.original.lampiran_pdf} /> },
         {
             header: 'KETERANGAN',
             cell: ({ row: { original: a } }) => (a.alasan_diubah ? [a.keterangan, `Dikoreksi: ${a.alasan_diubah}`].filter(Boolean).join(' · ') : (a.keterangan ?? '—')),
         },
-        { header: 'SUMBER', cell: ({ row }) => (row.original.dikoreksi ? 'Koreksi SA' : row.original.sumber === 'mandiri' ? 'Mandiri' : 'Sistem') },
     ];
 
     return (
