@@ -9,7 +9,6 @@ use App\Enums\SumberKoreksi;
 use App\Models\Attendance;
 use App\Models\AuditLog;
 use App\Models\Biller;
-use App\Models\BillerAlias;
 use App\Models\MonthlyScore;
 use App\Models\Period;
 use App\Models\RereadCase;
@@ -90,8 +89,8 @@ class LaporanKinerja
         return [
             'akun_aktif' => collect(Role::cases())->mapWithKeys(fn (Role $r) => [$r->value => (int) ($akun[$r->value] ?? 0)]),
             'akun_terkunci' => User::query()->whereNotNull('terkunci_at')->count(),
-            'master_biller' => Biller::query()->aktif()->count(),
-            'jumlah_alias' => BillerAlias::query()->count(),
+            'wajib_ganti_sandi' => User::query()->where('is_active', true)->where('wajib_ganti_sandi', true)->count(),
+            'absensi_hari_ini' => $this->absensiHariIni([Role::Biller, Role::Admin]),
             'belum_terpetakan' => $belum->count(),
             'belum_baris' => (int) $belum->sum('baris'),
             'periode' => [
@@ -102,12 +101,11 @@ class LaporanKinerja
             ],
             'distribusi_kategori' => $this->distribusi($skor),
             'kesiapan_tutup' => $layananPeriode->kesiapan($periode),
-            'tren_rata' => Period::query()->where('kode', '<=', $periode->kode)->orderByDesc('kode')->limit(4)->get()->reverse()
-                ->map(fn (Period $p) => [
-                    'periode' => $p->kode,
-                    'label' => $p->awalBulan()->locale('id')->translatedFormat('M Y'),
-                    'nilai' => ($r = MonthlyScore::query()->where('period_id', $p->id)->avg('final_score')) !== null ? round((float) $r, 2) : null,
-                ])->values(),
+            'tren_rata' => self::bulanBerurutan($periode)->map(fn (array $b) => [
+                'periode' => $b['kode'],
+                'label' => $b['label'],
+                'nilai' => $b['periode'] && ($r = MonthlyScore::query()->where('period_id', $b['periode']->id)->avg('final_score')) !== null ? round((float) $r, 2) : null,
+            ])->values(),
             'audit_terbaru' => AuditLog::query()->with('user:id,nama')->latest('id')->limit(4)->get()->map(fn (AuditLog $l) => [
                 'id' => $l->id, 'waktu' => $l->created_at?->toIso8601String(), 'user' => $l->user?->nama ?? 'Sistem',
                 'aksi' => $l->aksi, 'objek' => trim(($l->objek_type ?? '').' '.($l->objek_id ?? '')),
@@ -243,16 +241,36 @@ class LaporanKinerja
     /** @return Collection<int, array{periode: string, label: string, final_score: float|null, peringkat: int|null}> skor N periode terakhir */
     public function tren(Biller $biller, int $jumlah = 4, ?Period $sampai = null): Collection
     {
+        $akhir = $sampai ?? Period::query()->orderByDesc('kode')->first();
+        if (! $akhir) {
+            return collect();
+        }
         $skor = MonthlyScore::query()->where('biller_id', $biller->id)->get()->keyBy('period_id');
 
-        return Period::query()->when($sampai, fn ($q) => $q->where('kode', '<=', $sampai->kode))
-            ->orderByDesc('kode')->limit($jumlah)->get()->reverse()->values()
-            ->map(fn (Period $p) => [
-                'periode' => $p->kode,
-                'label' => $p->awalBulan()->locale('id')->translatedFormat('M Y'),
-                'final_score' => $skor->get($p->id)?->final_score,
-                'peringkat' => $skor->get($p->id)?->peringkat,
-            ]);
+        return self::bulanBerurutan($akhir, $jumlah)->map(fn (array $b) => [
+            'periode' => $b['kode'],
+            'label' => $b['label'],
+            'final_score' => $b['periode'] ? $skor->get($b['periode']->id)?->final_score : null,
+            'peringkat' => $b['periode'] ? $skor->get($b['periode']->id)?->peringkat : null,
+        ]);
+    }
+
+    /**
+     * N bulan BLTH berurutan yang berakhir di periode ini, termasuk bulan yang belum punya periode
+     * (periode = null), agar grafik tren selalu menampilkan sumbu yang lengkap.
+     *
+     * @return Collection<int, array{kode: string, label: string, periode: Period|null}>
+     */
+    public static function bulanBerurutan(Period $akhir, int $jumlah = 4): Collection
+    {
+        $kode = collect(range($jumlah - 1, 0))->map(fn (int $mundur) => $akhir->awalBulan()->subMonthsNoOverflow($mundur));
+        $ada = Period::query()->whereIn('kode', $kode->map(fn ($t) => $t->format('Ym')))->get()->keyBy('kode');
+
+        return $kode->map(fn ($t) => [
+            'kode' => $t->format('Ym'),
+            'label' => $t->locale('id')->translatedFormat('M Y'),
+            'periode' => $ada->get($t->format('Ym')),
+        ])->values();
     }
 
     /**
@@ -386,12 +404,13 @@ class LaporanKinerja
     public function absensiHariIni(array $peran): array
     {
         $ids = User::query()->where('is_active', true)->whereIn('role', array_map(fn (Role $r) => $r->value, $peran))->pluck('id');
-        $status = Attendance::query()->whereIn('user_id', $ids)->whereDate('tanggal', LayananAbsensi::hariIni()->toDateString())
-            ->pluck('status')->map(fn ($s) => $s instanceof StatusAbsensi ? $s->value : $s)->countBy();
+        $catatan = Attendance::query()->whereIn('user_id', $ids)->whereDate('tanggal', LayananAbsensi::hariIni()->toDateString())->get(['status', 'terlambat_menit']);
+        $status = $catatan->pluck('status')->map(fn ($s) => $s instanceof StatusAbsensi ? $s->value : $s)->countBy();
 
         return [
             'total' => $ids->count(),
             'hadir' => (int) ($status['hadir'] ?? 0),
+            'terlambat' => $catatan->filter(fn (Attendance $a) => $a->status === StatusAbsensi::Hadir && $a->terlambat_menit > 0)->count(),
             'izin' => (int) ($status['izin'] ?? 0),
             'sakit' => (int) ($status['sakit'] ?? 0),
             'alpa' => (int) ($status['alpa'] ?? 0),

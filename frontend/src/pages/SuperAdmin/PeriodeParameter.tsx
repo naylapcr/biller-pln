@@ -9,6 +9,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import FormDialog from '@/components/ui/FormDialog';
 import FormField from '@/components/ui/FormField';
 import Kartu from '@/components/ui/Kartu';
+import Notice from '@/components/ui/Notice';
 import PageHeader from '@/components/ui/PageHeader';
 import StatusChip from '@/components/ui/StatusChip';
 import { Button } from '@/components/ui/button';
@@ -204,13 +205,19 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
         navigator.geolocation.getCurrentPosition(
             (p) => {
                 form.setData((d) => ({ ...d, kantor_lat: p.coords.latitude.toFixed(7), kantor_lng: p.coords.longitude.toFixed(7) }));
-                setLokasiSaya({ memuat: false, pesan: `Akurasi ±${Math.round(p.coords.accuracy)} m. Simpan parameter untuk menerapkan.` });
+                setLokasiSaya({ memuat: false, pesan: `Titik terisi (akurasi ±${Math.round(p.coords.accuracy)} m). Tekan "Simpan Lokasi Kantor" agar berlaku untuk absensi.` });
             },
             () => setLokasiSaya({ memuat: false, pesan: 'Lokasi tidak didapat. Izinkan akses lokasi lalu coba lagi.' }),
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
         );
     };
     const total = Number(form.data.w_realisasi) + Number(form.data.w_eviden) + Number(form.data.w_kecepatan);
+    // Titik kantor baru berlaku setelah disimpan; tampilkan statusnya agar tidak terlewat.
+    const titikTersimpan = parameter.kantor_lat !== null && parameter.kantor_lng !== null;
+    const beda = (isi: unknown, simpan: number | null) =>
+        String(isi ?? '').trim() === '' ? simpan !== null : simpan === null || Math.abs(Number(isi) - simpan) > 1e-7;
+    const titikBerubah = beda(form.data.kantor_lat, parameter.kantor_lat) || beda(form.data.kantor_lng, parameter.kantor_lng);
+    const adaGalat = Object.keys(form.errors).length > 0;
 
     const isian = (k: keyof Parameter, opsi: { step?: string; satuan?: string; className?: string } = {}) => (
         <div className="relative">
@@ -250,6 +257,11 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                 simpan();
             }}
         >
+            {adaGalat && (
+                <Notice tone="danger">
+                    Parameter belum tersimpan. Periksa isian bertanda merah: {Object.values(form.errors).join(' ')}
+                </Notice>
+            )}
             <div className="grid items-start gap-4 xl:grid-cols-2">
                 <Kartu judul={`1. Bobot Modul Pascabayar (Total = ${formatNumber(total)}%)`}>
                     <p className="text-[11px] leading-[14px] text-muted-ink">Nilai dipotong terpisah oleh rasio Baca Ulang & AP2T: nilai × (1 − kasus salah ÷ total plg).</p>
@@ -282,7 +294,18 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                 </Kartu>
             </div>
 
-            <Kartu judul="3. Kehadiran & Lokasi Absen">
+            <Kartu
+                judul="3. Kehadiran & Lokasi Absen"
+                aksi={
+                    titikBerubah ? (
+                        <StatusChip titik tone="waiting" label="Titik kantor belum disimpan" />
+                    ) : titikTersimpan ? (
+                        <StatusChip titik tone="success" label="Titik kantor tersimpan ✓" />
+                    ) : (
+                        <StatusChip titik tone="danger" label="Titik kantor belum diatur" />
+                    )
+                }
+            >
                 <p className="text-[11px] leading-[14px] text-muted-ink">
                     Nilai kehadiran = rata-rata hari kerja di bulan kerja (bulan sebelum BLTH): hadir tepat waktu 100; terlambat, pulang cepat, atau tidak absen pulang sesuai
                     isian; izin/sakit berlampiran 100 (tanpa lampiran sesuai isian); alpa 0. Absen masuk dan pulang hanya diterima dalam radius dari titik kantor.
@@ -315,9 +338,18 @@ function FormParameter({ kode, parameter, jadwal, diubah }: { kode: string; para
                             Cek titik di Google Maps
                         </a>
                     )}
-                    <p className="text-[11px] text-muted-ink">
-                        {lokasiSaya.pesan ?? (form.data.kantor_lat === '' ? 'Titik kantor belum diisi: absen hadir ditolak sampai diisi.' : 'Buka halaman ini dari kantor, lalu tekan tombol di samping.')}
+                    <p className={cn('min-w-0 flex-1 basis-60 text-[11px]', titikBerubah ? 'font-semibold text-pln-yellow-ink' : 'text-muted-ink')}>
+                        {lokasiSaya.pesan ??
+                            (titikBerubah
+                                ? 'Titik kantor sudah diubah tetapi belum disimpan. Absen biller masih memakai titik lama sampai disimpan.'
+                                : titikTersimpan
+                                  ? 'Titik kantor sudah berlaku untuk absen masuk dan pulang.'
+                                  : 'Titik kantor belum diisi: absen hadir ditolak. Buka halaman ini dari kantor, tekan "Pakai Lokasi Saya Sekarang", lalu Simpan.')}
                     </p>
+                    <Button type="submit" disabled={form.processing} className="sm:ml-auto">
+                        {form.processing && <LoaderCircle className="animate-spin" />}
+                        Simpan Lokasi Kantor
+                    </Button>
                 </div>
             </Kartu>
 

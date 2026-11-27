@@ -35,7 +35,7 @@ return [
     // PRD 9: sesi habis setelah 8 jam tanpa aktivitas.
     'lifetime' => (int) env('SESSION_LIFETIME', 480),
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
+    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', true), // sesi berakhir saat browser ditutup
 
     /*
     |--------------------------------------------------------------------------

@@ -8,6 +8,7 @@ use App\Models\Period;
 use App\Services\LayananAbsensi;
 use App\Services\LayananPemetaan;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -22,6 +23,11 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user()?->loadMissing('biller:id,nama,nip,login_acmt,kode_petugas_acmt,zona_wilayah');
+        // Enkripsi riwayat halaman (butuh konteks aman: HTTPS atau localhost) agar data di history browser
+        // tidak bisa dibuka lagi setelah logout.
+        if ($user && ($request->secure() || in_array($request->getHost(), ['localhost', '127.0.0.1', '::1'], true))) {
+            Inertia::encryptHistory();
+        }
 
         return [
             ...parent::share($request),

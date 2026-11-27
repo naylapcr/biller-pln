@@ -10,6 +10,7 @@ import ModalTutupPeriode from '@/components/superadmin/ModalTutupPeriode';
 
 import EmptyState from '@/components/ui/EmptyState';
 import Kartu from '@/components/ui/Kartu';
+import Notice from '@/components/ui/Notice';
 import PageHeader from '@/components/ui/PageHeader';
 import StatCard from '@/components/ui/StatCard';
 import StatusChip from '@/components/ui/StatusChip';
@@ -23,8 +24,8 @@ import type { Option, PageProps, PeriodeInfo } from '@/types';
 interface Sistem {
     akun_aktif: { super_admin: number; admin: number; biller: number };
     akun_terkunci: number;
-    master_biller: number;
-    jumlah_alias: number;
+    wajib_ganti_sandi: number;
+    absensi_hari_ini: { total: number; hadir: number; terlambat: number; izin: number; sakit: number; alpa: number; belum: number };
     belum_terpetakan: number;
     belum_baris: number;
     periode: { kode: string; status: 'terbuka' | 'ditutup'; batch_committed: string[] };
@@ -49,6 +50,7 @@ export default function DashboardSistem() {
     const [tutup, setTutup] = useState(false);
     const akun = sistem?.akun_aktif;
     const totalAkun = akun ? akun.super_admin + akun.admin + akun.biller : 0;
+    const absen = sistem?.absensi_hari_ini;
 
     return (
         <>
@@ -71,7 +73,7 @@ export default function DashboardSistem() {
                 }
             />
 
-            {!sistem || !akun ? (
+            {!sistem || !akun || !absen ? (
                 <EmptyState
                     icon={Calendar}
                     title="Belum ada periode"
@@ -85,30 +87,42 @@ export default function DashboardSistem() {
                 </EmptyState>
             ) : (
                 <div className="grid gap-4">
+                    {sistem.belum_terpetakan > 0 && (
+                        <Notice
+                            tone="waiting"
+                            action={
+                                <Button size="sm" variant="secondary" asChild>
+                                    <Link href={route('pengaturan.pemetaan.index')}>Petakan Sekarang →</Link>
+                                </Button>
+                            }
+                        >
+                            {formatNumber(sistem.belum_terpetakan)} login ACMT belum terpetakan · {formatNumber(sistem.belum_baris)} baris data belum masuk skor biller mana pun.
+                        </Notice>
+                    )}
                     <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
                         <StatCard
                             label="Total Akun Aktif"
                             value={`${formatNumber(totalAkun)} Akun`}
-                            caption={`${akun.biller} Biller · ${akun.admin} Koord · ${akun.super_admin} SA${sistem.akun_terkunci > 0 ? ` · ${sistem.akun_terkunci} terkunci` : ''}`}
+                            caption={`${akun.biller} Biller · ${akun.admin} Koord · ${akun.super_admin} SA`}
                         />
                         <StatCard
-                            label="Master Biller & Alias"
-                            value={`${sistem.master_biller} · ${sistem.jumlah_alias}`}
-                            valueClassName="text-pln-blue"
-                            caption={`${sistem.master_biller} Biller · ${sistem.jumlah_alias} Alias ACMT`}
-                        />
-                        <StatCard
-                            label="Login Belum Terpetakan"
-                            value={`${formatNumber(sistem.belum_terpetakan)} Login`}
-                            valueClassName={sistem.belum_terpetakan > 0 ? 'text-amber' : 'text-success'}
+                            label="Absensi Hari Ini"
+                            value={`${formatNumber(absen.hadir)}/${formatNumber(absen.total)} Hadir`}
+                            valueClassName={absen.belum > 0 ? 'text-pln-blue' : 'text-success'}
                             caption={
-                                sistem.belum_terpetakan > 0 ? (
-                                    <Link href={route('pengaturan.pemetaan.index')} className="hover:text-pln-blue hover:underline">
-                                        {formatNumber(sistem.belum_baris)} baris data menunggu alias
-                                    </Link>
-                                ) : (
-                                    'Semua login terpetakan'
-                                )
+                                <Link href={route('pengaturan.koreksi-absensi.index')} className="hover:text-pln-blue hover:underline">
+                                    {formatNumber(absen.terlambat)} terlambat · {formatNumber(absen.izin + absen.sakit)} izin/sakit · {formatNumber(absen.belum)} belum absen
+                                </Link>
+                            }
+                        />
+                        <StatCard
+                            label="Keamanan Akun"
+                            value={sistem.akun_terkunci > 0 ? `${formatNumber(sistem.akun_terkunci)} Terkunci` : 'Aman'}
+                            valueClassName={sistem.akun_terkunci > 0 ? 'text-pln-red' : 'text-success'}
+                            caption={
+                                <Link href={route('pengaturan.users.index')} className="hover:text-pln-blue hover:underline">
+                                    {sistem.wajib_ganti_sandi > 0 ? `${formatNumber(sistem.wajib_ganti_sandi)} akun wajib ganti kata sandi` : 'Semua kata sandi sudah diganti'}
+                                </Link>
                             }
                         />
                         <StatCard

@@ -53,16 +53,18 @@ export default function SkorSaya() {
 
                     <StatistikSkor skor={skor} />
 
+                    {/* Dua kolom bertumpuk sendiri-sendiri agar kartu pendek tidak meninggalkan ruang kosong. */}
                     <div className="grid items-start gap-[18px] xl:grid-cols-2">
-                        <KartuModulPasca skor={skor} />
-                        <KartuModulPrabayar skor={skor} />
-                    </div>
-
-                    <div className="grid items-start gap-[18px] xl:grid-cols-2">
-                        <Kartu judul="Tren Skor 4 Periode (BLTH)" aksi={<ChipSelisih data={tren.map((t) => ({ label: t.label, nilai: t.final_score }))} />}>
-                            <TrenSkor data={tren} />
-                        </Kartu>
-                        <KartuKehadiran skor={skor} />
+                        <div className="grid gap-[18px]">
+                            <KartuModulPasca skor={skor} />
+                            <Kartu judul="Tren Skor 4 Periode (BLTH)" aksi={<ChipSelisih data={tren.map((t) => ({ label: t.label, nilai: t.final_score }))} />}>
+                                <TrenSkor data={tren} />
+                            </Kartu>
+                        </div>
+                        <div className="grid gap-[18px]">
+                            <KartuModulPrabayar skor={skor} />
+                            <KartuKehadiran skor={skor} />
+                        </div>
                     </div>
 
                     <Kartu

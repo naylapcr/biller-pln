@@ -1,5 +1,5 @@
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { LoaderCircle } from 'lucide-react';
+import { Check, LoaderCircle, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import FormField from '@/components/ui/FormField';
@@ -83,8 +83,18 @@ export default function Profil() {
     const nama = useForm({ nama: profil.nama });
     const sandi = useForm({ current_password: '', password: '', password_confirmation: '' });
     const p = sandi.data.password;
-    const kuat = p.length >= 8 && /[a-z]/.test(p) && /[A-Z]/.test(p) && /\d/.test(p);
     const cocok = p !== '' && p === sandi.data.password_confirmation;
+    // Sama dengan aturan server (Password::defaults + PasswordUpdateRequest).
+    const syarat: [string, boolean][] = [
+        ['Kata sandi saat ini sudah diisi', sandi.data.current_password !== ''],
+        ['Minimal 8 karakter', p.length >= 8],
+        ['Ada huruf besar dan huruf kecil', /[a-z]/.test(p) && /[A-Z]/.test(p)],
+        ['Ada angka', /\d/.test(p)],
+        ['Tidak memuat kata "password" dan tidak sama dengan NIP/username', p !== '' && !p.toLowerCase().includes('password') && p.toLowerCase() !== profil.username_nip.toLowerCase()],
+        ['Konfirmasi sama dengan kata sandi baru', cocok],
+    ];
+    const kuat = syarat.slice(1, 5).every(([, ok]) => ok);
+    const siap = syarat.every(([, ok]) => ok);
     const peran = PERAN[profil.role];
     const b = profil.biller;
 
@@ -146,53 +156,74 @@ export default function Profil() {
                     </div>
                 </section>
 
+                {/* Kolom kiri bertumpuk (profil + riwayat) agar setinggi kartu ganti kata sandi. */}
                 <div className="grid items-start gap-[18px] xl:grid-cols-2">
-                    <Kartu judul="Informasi & Ubah Profil Saya">
-                        <p className="text-[11px] leading-[14px] text-muted-ink">Perbarui nama tampilan Anda. NIP, peran baku, dan pemetaan kode ACMT dikelola oleh Super Admin.</p>
-                        <form
-                            className="grid gap-3"
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                nama.patch(route('profil.update'), { preserveScroll: true });
-                            }}
-                        >
-                            <FormField id="nama" label="Nama Lengkap (Dapat Diubah)" required error={nama.errors.nama}>
-                                <Input id="nama" value={nama.data.nama} onChange={(e) => nama.setData('nama', e.target.value)} />
-                            </FormField>
-                            <Terkunci id="username" label="Username / NIP (Terkunci)" nilai={profil.username_nip} />
-                            {profil.role === 'biller' && (
-                                <>
-                                    <Terkunci id="wilayah" label="Wilayah Tugas & Sektor" nilai={`${b?.zona_wilayah ?? 'Belum diisi'} · ULP Kota Barat`} mono={false} />
-                                    <Terkunci id="kode" label="Kode Petugas & Login ACMT" nilai={b ? `${b.kode_petugas} · ${b.login_acmt}` : 'Belum ditautkan'} />
-                                </>
-                            )}
-                            {profil.role === 'admin' && (
-                                <>
-                                    <Terkunci id="peran" label="Peran Akses Baku (users.role)" nilai="Koordinator Admin (admin) — Unggah, Validasi, Pantau & Laporan" mono={false} />
-                                    <Terkunci
-                                        id="absen"
-                                        label="Status Absensi Mandiri Hari Ini"
-                                        nilai={
-                                            profil.absensi_hari_ini
-                                                ? `${STATUS_ABSENSI[profil.absensi_hari_ini.status].label}${profil.absensi_hari_ini.absen_at ? ` · ${formatTanggal(profil.absensi_hari_ini.absen_at, 'HH:mm')} WIB` : ''}`
-                                                : '–'
-                                        }
-                                        mono={false}
-                                    />
-                                </>
-                            )}
-                            {profil.role === 'super_admin' && (
-                                <>
-                                    <Terkunci id="peran" label="Peran Akses Baku (users.role)" nilai="Super Admin (super_admin) — Akun, Master, Parameter & Audit" mono={false} />
-                                    <Terkunci id="absen" label="Kebijakan Absensi" nilai="Super Admin tidak wajib absen" mono={false} />
-                                </>
-                            )}
-                            <Button type="submit" className="w-full" disabled={nama.processing || nama.data.nama.trim() === profil.nama}>
-                                {nama.processing && <LoaderCircle className="animate-spin" />}
-                                Simpan Perubahan Profil
-                            </Button>
-                        </form>
-                    </Kartu>
+                    <div className="grid gap-[18px]">
+                        <Kartu judul="Informasi & Ubah Profil Saya">
+                            <p className="text-[11px] leading-[14px] text-muted-ink">Perbarui nama tampilan Anda. NIP, peran baku, dan pemetaan kode ACMT dikelola oleh Super Admin.</p>
+                            <form
+                                className="grid gap-3"
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    nama.patch(route('profil.update'), { preserveScroll: true });
+                                }}
+                            >
+                                <FormField id="nama" label="Nama Lengkap (Dapat Diubah)" required error={nama.errors.nama}>
+                                    <Input id="nama" value={nama.data.nama} onChange={(e) => nama.setData('nama', e.target.value)} />
+                                </FormField>
+                                <Terkunci id="username" label="Username / NIP (Terkunci)" nilai={profil.username_nip} />
+                                {profil.role === 'biller' && (
+                                    <>
+                                        <Terkunci id="wilayah" label="Wilayah Tugas & Sektor" nilai={`${b?.zona_wilayah ?? 'Belum diisi'} · ULP Kota Barat`} mono={false} />
+                                        <Terkunci id="kode" label="Kode Petugas & Login ACMT" nilai={b ? `${b.kode_petugas} · ${b.login_acmt}` : 'Belum ditautkan'} />
+                                    </>
+                                )}
+                                {profil.role === 'admin' && (
+                                    <>
+                                        <Terkunci id="peran" label="Peran Akses Baku (users.role)" nilai="Koordinator Admin (admin) — Unggah, Validasi, Pantau & Laporan" mono={false} />
+                                        <Terkunci
+                                            id="absen"
+                                            label="Status Absensi Mandiri Hari Ini"
+                                            nilai={
+                                                profil.absensi_hari_ini
+                                                    ? `${STATUS_ABSENSI[profil.absensi_hari_ini.status].label}${profil.absensi_hari_ini.absen_at ? ` · ${formatTanggal(profil.absensi_hari_ini.absen_at, 'HH:mm')} WIB` : ''}`
+                                                    : '–'
+                                            }
+                                            mono={false}
+                                        />
+                                    </>
+                                )}
+                                {profil.role === 'super_admin' && (
+                                    <>
+                                        <Terkunci id="peran" label="Peran Akses Baku (users.role)" nilai="Super Admin (super_admin) — Akun, Master, Parameter & Audit" mono={false} />
+                                        <Terkunci id="absen" label="Kebijakan Absensi" nilai="Super Admin tidak wajib absen" mono={false} />
+                                    </>
+                                )}
+                                <Button type="submit" className="w-full" disabled={nama.processing || nama.data.nama.trim() === profil.nama}>
+                                    {nama.processing && <LoaderCircle className="animate-spin" />}
+                                    Simpan Perubahan Profil
+                                </Button>
+                            </form>
+                        </Kartu>
+
+                        <Kartu judul="Riwayat Login & Aktivitas Terakhir" aksi={<StatusChip label={`${aktivitas.length} Aktivitas`} tone="neutral" />}>
+                            <ul className="grid gap-2">
+                                {aktivitas.map((a) => (
+                                    <li key={a.id} className="flex items-center justify-between gap-3 rounded-10 bg-canvas px-3 py-2.5">
+                                        <div className="min-w-0">
+                                            <p className="font-mono text-[11px] font-bold text-ink">{formatTanggal(a.waktu, 'd MMM yyyy · HH:mm')} WIB</p>
+                                            <p className="truncate text-xs text-ink-soft">
+                                                <span className="font-semibold">{a.objek || 'Masuk ke sistem'}</span>
+                                                <span className="font-mono text-[11px] text-muted-ink"> · IP {a.ip ?? '–'}</span>
+                                            </p>
+                                        </div>
+                                        <StatusChip label={a.aksi} tone={toneAksi(a.aksi)} />
+                                    </li>
+                                ))}
+                                {aktivitas.length === 0 && <li className="text-xs text-muted-ink">Belum ada aktivitas.</li>}
+                            </ul>
+                        </Kartu>
+                    </div>
 
                     <Kartu judul="Ganti Kata Sandi Akun">
                         <p className="text-[11px] leading-[14px] text-muted-ink">Gunakan kombinasi huruf besar, huruf kecil, dan angka minimal 8 karakter untuk menjaga keamanan akun.</p>
@@ -214,6 +245,17 @@ export default function Profil() {
                                 onChange={(v) => sandi.setData('password_confirmation', v)}
                                 tanda={cocok ? 'Cocok ✓' : null}
                             />
+                            <ul aria-label="Syarat kata sandi baru" className="grid gap-1 rounded-10 border border-line bg-canvas px-3 py-2.5">
+                                {syarat.map(([label, ok]) => (
+                                    <li key={label} className={cn('flex items-center gap-1.5 text-[11px] font-medium', ok ? 'text-success' : 'text-muted-ink')}>
+                                        {ok ? <Check className="size-3.5 shrink-0" aria-hidden /> : <X className="size-3.5 shrink-0 text-faint" aria-hidden />}
+                                        <span>
+                                            {label}
+                                            <span className="sr-only">{ok ? ' (terpenuhi)' : ' (belum)'}</span>
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
                             <div className="rounded-10 border border-sky-side bg-sky-row px-3 py-2.5 text-[10px] leading-[15px] text-slate-ink">
                                 <p className="text-[9px] font-bold text-sky-ink">KEBIJAKAN KEAMANAN & SESI</p>
                                 <ul className="mt-0.5 list-inside list-disc">
@@ -222,7 +264,7 @@ export default function Profil() {
                                     <li>Kata sandi tersimpan terenkripsi (hash).</li>
                                 </ul>
                             </div>
-                            <Button type="submit" variant="success" className="w-full" disabled={sandi.processing || !kuat || !cocok || !sandi.data.current_password}>
+                            <Button type="submit" variant="success" className="w-full" disabled={sandi.processing || !siap}>
                                 {sandi.processing && <LoaderCircle className="animate-spin" />}
                                 Perbarui Kata Sandi
                             </Button>
@@ -230,19 +272,6 @@ export default function Profil() {
                     </Kartu>
                 </div>
 
-                <Kartu judul="Riwayat Login & Aktivitas Akun Terakhir" aksi={<StatusChip label={`${aktivitas.length} Aktivitas Terakhir`} tone="neutral" />}>
-                    <ul className="grid gap-2">
-                        {aktivitas.map((a) => (
-                            <li key={a.id} className="grid gap-x-4 gap-y-1 rounded-10 bg-canvas px-3 py-2.5 sm:grid-cols-[170px_1fr_140px_auto] sm:items-center">
-                                <span className="font-mono text-[11px] font-bold text-ink">{formatTanggal(a.waktu, 'd MMM yyyy · HH:mm')} WIB</span>
-                                <span className="text-xs font-semibold text-ink-soft">{a.objek || 'Masuk ke sistem'}</span>
-                                <span className="font-mono text-[11px] text-muted-ink">{a.ip ?? '–'}</span>
-                                <StatusChip label={a.aksi} tone={toneAksi(a.aksi)} />
-                            </li>
-                        ))}
-                        {aktivitas.length === 0 && <li className="text-xs text-muted-ink">Belum ada aktivitas.</li>}
-                    </ul>
-                </Kartu>
             </div>
         </>
     );

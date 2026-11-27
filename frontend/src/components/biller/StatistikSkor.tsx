@@ -50,8 +50,8 @@ export default function StatistikSkor({ skor }: { skor: SkorBiller }) {
 
     return (
         <Kartu judul="Statistik Skor & Komponen Modul" subjudul="Seluruh item pekerjaan: pascabayar, prabayar, kehadiran, Hari J, invoice, dan pemutusan">
-            <div className="flex flex-wrap items-start gap-5">
-                <div className="flex w-full flex-col items-center gap-3 sm:w-[200px]">
+            <div className="flex flex-wrap items-stretch gap-5">
+                <div className="flex w-full flex-col items-center justify-center gap-3 sm:w-[200px]">
                     <Donut
                         data={[
                             { nilai: bagianModul, warna: 'stroke-pln-blue' },
@@ -101,11 +101,9 @@ export default function StatistikSkor({ skor }: { skor: SkorBiller }) {
                     >
                         <RingNilai label="Tuntas" nilai={j.persen_tuntas} warna="stroke-violet" />
                     </Kelompok>
-                    <Kelompok judul="Invoice" nilai="–" catatan="Menunggu berkas invoice · belum ikut skor periode ini.">
-                        <RingNilai label="Tagihan Terantar" nilai={null} warna="stroke-sky-val" />
-                    </Kelompok>
-                    <Kelompok judul="Pemutusan (PDIL)" nilai="–" catatan="Menunggu berkas PDIL · belum ikut skor periode ini.">
-                        <RingNilai label="Tuntas" nilai={null} warna="stroke-pln-red" />
+                    <Kelompok judul="Menunggu Berkas" nilai="–" catatan="Invoice & PDIL belum ikut skor periode ini.">
+                        <RingNilai label="Invoice" nilai={null} warna="stroke-sky-val" />
+                        <RingNilai label="Pemutusan (PDIL)" nilai={null} warna="stroke-pln-red" />
                     </Kelompok>
                 </div>
             </div>
